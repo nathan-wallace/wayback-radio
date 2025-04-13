@@ -18,9 +18,9 @@ export default defineConfig({
         'apple-touch-icon.png'
       ],
       manifest: {
-        name: 'Dailback Radio',
-        short_name: 'Dailback',
-        description: 'Tune in. Zone out. Vintage radio vibes in a modern experience.',
+        name: 'Wayback Radio',
+        short_name: 'Wayback',
+        description: 'Tune in on time. Archival recordings from Library of Congress.',
         theme_color: '#000000',
         background_color: '#000000',
         display: 'standalone',
