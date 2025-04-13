@@ -1,3 +1,4 @@
+// Radio.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { RadioContext } from "../context/RadioContext";
 import { fetchAvailableYears, fetchAudioByYear } from '../services/AudioService';
@@ -7,7 +8,6 @@ import VolumeKnob from './VolumeKnob';
 import TuningKnob from './TuningKnob';
 import PowerButton from './PowerButton';
 import YearSelector from './YearSelector';
-import MetadataPanel from './MetadataPanel';
 import './Radio.css';
 
 export default function Radio() {
@@ -36,6 +36,7 @@ export default function Radio() {
     loadYears();
   }, []);
 
+  // Update audio only when the 'year' changes.
   useEffect(() => {
     const loadAudio = async () => {
       setIsLoading(true);
@@ -47,7 +48,7 @@ export default function Radio() {
     };
     loadAudio();
   }, [year]);
-  
+
   return (
     <RadioContext.Provider
       value={{ year, setYear,

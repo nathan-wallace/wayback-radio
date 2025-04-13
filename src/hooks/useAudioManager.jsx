@@ -5,7 +5,7 @@ import { Howl } from 'howler';
 export const useAudioManager = (audioUrl, isOn, volume) => {
   const [sound, setSound] = useState(null);
 
-  // Create a new Howl instance only when the audioUrl changes
+  // Create a new Howl instance only when audioUrl changes.
   useEffect(() => {
     if (!audioUrl) return;
 
@@ -13,33 +13,31 @@ export const useAudioManager = (audioUrl, isOn, volume) => {
       src: [audioUrl],
       autoplay: false,
       html5: true,
-      volume: 0, // start with volume 0 to allow a fade in
+      volume: 0, // Start with zero volume for a fade-in.
       format: ['mp3'],
-      onplay: () => newSound.fade(0, volume, 500)
+      onplay: () => newSound.fade(0, volume, 500),
     });
 
     setSound(newSound);
 
-    // Clean up when the audioUrl changes
     return () => {
-      // Stop and unload the current sound when a new audioUrl is provided.
-      newSound.stop();
-      newSound.unload();
+      if (newSound) {
+        newSound.stop();
+        newSound.unload();
+      }
     };
   }, [audioUrl]);
 
-  // Manage play/pause without unloading the sound when toggling on/off
+  // Manage play/pause without reloading the audio.
   useEffect(() => {
     if (!sound) return;
-  
+
     if (isOn) {
-      // Resume playing if paused, or start if not already playing
       if (!sound.playing()) {
         sound.play();
         sound.fade(0, volume, 500);
       }
     } else {
-      // Pause with a fadeout
       sound.fade(volume, 0, 500);
       setTimeout(() => {
         if (sound.playing()) {
@@ -49,7 +47,7 @@ export const useAudioManager = (audioUrl, isOn, volume) => {
     }
   }, [isOn, sound, volume]);
 
-  // Update volume if it changes
+  // Update volume changes.
   useEffect(() => {
     if (sound) {
       sound.volume(volume);
