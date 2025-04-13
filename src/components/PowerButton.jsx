@@ -4,7 +4,7 @@ import { animateScreen } from '../utils/audioUtils';
 import { Howl } from 'howler';
 import gsap from 'gsap';
 
-const click = new Howl({ src: ['/sounds/click.webm'], volume: 0.3 });
+const click = new Howl({ src: ['./sounds/click.webm'], volume: 0.3 });
 
 export default function PowerButton() {
   const { isOn, setIsOn, screenRef } = useRadio();

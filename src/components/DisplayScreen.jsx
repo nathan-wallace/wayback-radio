@@ -7,7 +7,7 @@ export default function DisplayScreen() {
   return (
     <div className="glass">
       <img
-        src="/svgs/logo.svg"
+        src="./svgs/logo.svg"
         alt="Radio Logo"
         className={`radio-logo ${isOn ? 'logo-off' : 'logo-on'}`}
       />
