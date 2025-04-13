@@ -37,7 +37,6 @@ export default function Radio() {
   }, []);
 
   useEffect(() => {
-    if (!isOn) return;
     const loadAudio = async () => {
       setIsLoading(true);
       const { audioUrl, metadata, error } = await fetchAudioByYear(year);
@@ -47,8 +46,8 @@ export default function Radio() {
       setIsLoading(false);
     };
     loadAudio();
-  }, [year, isOn]);
-
+  }, [year]);
+  
   return (
     <RadioContext.Provider
       value={{ year, setYear,
