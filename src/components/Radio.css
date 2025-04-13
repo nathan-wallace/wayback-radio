@@ -310,3 +310,109 @@ button svg{
   overflow-y: auto;
   margin:1rem 0;
 }
+@media (max-width: 768px) {
+  html {
+    font-size: 14px;
+  }
+  body {
+    align-items: self-start;
+  }
+  #app{
+    position: fixed;
+    height: 100%;
+  }
+  .radio-frame {
+    padding: 1em;
+    width: 100vw;
+    max-width: 100%;
+    box-sizing: border-box;
+    border-radius: 0em;
+    height: -webkit-fill-available;
+  }
+  .radio-frame::before {
+    content: "";
+    position: absolute;
+    top:0;
+    left:0;
+    transform: translate(0%, 0%);
+    width: 0;
+    height: 0;
+    background:none;
+    border-radius:0em;
+    box-shadow: none;
+  }
+
+  .glass {
+    max-width: 100%;
+    width: 100%;
+    height: -webkit-fill-available;
+    min-height: 140px;
+  }
+
+  .controls {
+    flex-direction: row;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+
+  .knob-container {
+    margin: 0.5em 0;
+  }
+
+  .knob,
+  .knob-wrapper {
+    width: clamp(50px, 25vw, 70px);
+    height: clamp(50px, 25vw, 70px);
+  }
+
+  .knob-label {
+    font-size: 0.8rem;
+  }
+
+  button {
+    width: 100%;
+    max-width: 200px;
+    height: auto;
+    padding: 0.75em 1em;
+    font-size: 0.9em;
+  }
+
+  button svg {
+    width: 4em;
+  }
+
+  .year-indicator {
+    margin: 0.5em 0;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: 48px;
+  }
+
+  .year-indicator .years {
+    margin-top: .9rem;
+}
+  .year-indicator-wrapper{
+    width: -webkit-fill-available;
+  }
+  .year {
+    min-width: 2.5em;
+    font-size: 0.85rem;
+    padding: 0.4em;
+  }
+  .indicator {
+    height: 3.4rem;
+}
+
+  .loading,
+  .error,
+  .now-playing {
+    font-size: 0.9rem;
+    padding: 0.5rem;
+  }
+
+  .screen {
+    font-size: 0.8rem;
+  }
+}
