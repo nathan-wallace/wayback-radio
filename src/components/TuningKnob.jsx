@@ -1,4 +1,4 @@
-// TuningKnob.jsx
+// components/TuningKnob.jsx
 import React, { useEffect, useRef, useMemo } from 'react';
 import { Draggable } from 'gsap/Draggable';
 import gsap from 'gsap';
@@ -10,7 +10,7 @@ export default function TuningKnob() {
   const knobRef = useRef(null);
   const dragRef = useRef(null);
 
-  // Create a debounced version of setYear; adjust delay (in ms) as needed.
+  // Create a debounced version of setYear (adjust delay as needed, currently 100ms).
   const debouncedSetYear = useMemo(() => debounce(setYear, 100), [setYear]);
 
   useEffect(() => {
@@ -21,19 +21,21 @@ export default function TuningKnob() {
       bounds: { minRotation: 0, maxRotation: 300 },
       inertia: true,
       onDrag: function () {
-        // Calculate the interpolated year from the rotation.
+        // Map the current rotation to an index in the availableYears array.
         const rawIndex = (this.rotation / 300) * (availableYears.length - 1);
         const boundedIndex = Math.max(0, Math.min(availableYears.length - 1, rawIndex));
         const interpolatedYear = availableYears[Math.round(boundedIndex)];
-        // Use the debounced function instead of calling setYear immediately.
+        // Use the debounced function to update the year.
         debouncedSetYear(interpolatedYear);
       },
     })[0];
 
-    return () => dragRef.current.kill();
+    return () => {
+      if (dragRef.current) dragRef.current.kill();
+    };
   }, [availableYears, debouncedSetYear]);
 
-  // If not dragging, update the knob rotation when the year changes.
+  // When the year changes externally, update the knob's rotation.
   useEffect(() => {
     if (!dragRef.current || dragRef.current.isDragging) return;
     const index = availableYears.indexOf(year);

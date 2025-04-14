@@ -1,7 +1,10 @@
-// AudioService.js
+// services/AudioService.jsx
 import axios from 'axios';
 
 const BASE_URL = 'https://www.loc.gov/audio/';
+
+// In-memory cache for audio data keyed by year.
+const audioCache = {};
 
 /**
  * Returns a random item from an array.
@@ -14,11 +17,15 @@ function getRandomAudio(audioList) {
 
 /**
  * Fetch audio URLs for a given year.
- * Returns a promise that resolves with an object containing either:
- * - { audioUrl: <url>, error: null } if a playable audio URL is found
- * - { audioUrl: null, error: 'error message' } if not.
+ * Caches the result to minimize duplicate API calls.
  */
 export async function fetchAudioByYear(year) {
+  // Check the cache first.
+  if (audioCache[year]) {
+    console.info(`Returning cached result for year ${year}`);
+    return audioCache[year];
+  }
+
   try {
     const response = await axios.get(`${BASE_URL}?q=${year}&fo=json`);
     const items = response.data.results;
@@ -28,10 +35,10 @@ export async function fetchAudioByYear(year) {
     );
 
     const selectedItem = getRandomAudio(playableItems);
-console.log(selectedItem);
+    let result;
     if (selectedItem) {
       const audioResource = selectedItem.resources.find(resource => resource.audio);
-      return {
+      result = {
         audioUrl: audioResource.audio,
         metadata: {
           title: selectedItem.title,
@@ -49,22 +56,24 @@ console.log(selectedItem);
           location: selectedItem.location?.join(', ') || "",
           mime_type: selectedItem.mime_type?.join(', ') || ""
         },
-        
         error: null
       };
     } else {
-      return { audioUrl: null, metadata: null, error: 'No playable audio found.' };
+      result = { audioUrl: null, metadata: null, error: 'No playable audio found.' };
     }
+    // Save the result in the cache.
+    audioCache[year] = result;
+    return result;
   } catch (error) {
-    return { audioUrl: null, metadata: null, error: 'Error fetching audio. Try another year.' };
+    const result = { audioUrl: null, metadata: null, error: 'Error fetching audio. Try another year.' };
+    // Cache the error result to prevent continuous requests in error conditions.
+    audioCache[year] = result;
+    return result;
   }
 }
 
-
 /**
  * Fetch all available years that have audio content.
- * This function queries the API and extracts unique years from the "date" field in each result.
- * Note: The extraction assumes that the "date" field contains a 4-digit year.
  */
 export async function fetchAvailableYears() {
   try {
@@ -73,7 +82,7 @@ export async function fetchAvailableYears() {
     const yearsSet = new Set();
     items.forEach(item => {
       if (item.date) {
-        // Extract a 4-digit year (starting with 18, 19 or 20)
+        // Extract a 4-digit year.
         const match = item.date.match(/\b(18|19|20)\d{2}\b/);
         if (match) {
           yearsSet.add(parseInt(match[0], 10));
