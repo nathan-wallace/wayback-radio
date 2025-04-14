@@ -109,11 +109,12 @@ body {
   filter: blur(8px) contrast(0);  /* Initially blurred and low contrast */
   color: #ebebeb;
   font-family: 'Courier New', Courier, monospace;
-  overflow-y: auto;        /* Scroll vertically */
-  overflow-x: hidden;      /* Prevent horizontal scroll */
   white-space: normal;     /* Wrap text */
   word-wrap: break-word;   /* Ensure long words wrap */
   font-size: 0.875rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .screen a{

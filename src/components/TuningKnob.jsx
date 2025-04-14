@@ -1,12 +1,12 @@
+// TuningKnob.jsx
 import React, { useEffect, useRef } from 'react';
 import { Draggable } from 'gsap/Draggable';
 import gsap from 'gsap';
 import { useRadio } from '../context/RadioContext';
 
-// Real-time synced tuning knob and year selection
-
 export default function TuningKnob() {
-  const { year, setYear, availableYears } = useRadio();
+  const { state, dispatch } = useRadio();
+  const { year, availableYears } = state;
   const knobRef = useRef(null);
   const dragRef = useRef(null);
 
@@ -21,12 +21,16 @@ export default function TuningKnob() {
         const rawIndex = (this.rotation / 300) * (availableYears.length - 1);
         const boundedIndex = Math.max(0, Math.min(availableYears.length - 1, rawIndex));
         const interpolatedYear = availableYears[Math.round(boundedIndex)];
-        setYear(interpolatedYear);
+        dispatch({ type: 'SET_YEAR', payload: interpolatedYear });
       },
     })[0];
 
-    return () => dragRef.current.kill();
-  }, [availableYears, setYear]);
+    return () => {
+      if (dragRef.current) {
+        dragRef.current.kill();
+      }
+    };
+  }, [availableYears, dispatch]);
 
   useEffect(() => {
     if (!dragRef.current || dragRef.current.isDragging) return;
