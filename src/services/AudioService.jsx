@@ -73,7 +73,7 @@ export async function fetchAvailableYears() {
     const yearsSet = new Set();
     items.forEach(item => {
       if (item.date) {
-        // Extract a 4-digit year (starting with 19 or 20)
+        // Extract a 4-digit year (starting with 18, 19 or 20)
         const match = item.date.match(/\b(18|19|20)\d{2}\b/);
         if (match) {
           yearsSet.add(parseInt(match[0], 10));
