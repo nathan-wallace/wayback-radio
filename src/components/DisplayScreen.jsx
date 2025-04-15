@@ -1,8 +1,20 @@
-import React from 'react';
+// DisplayScreen.jsx
+import React, { useEffect } from 'react';
 import { useRadio } from '../context/RadioContext';
+import { animateScreen } from '../utils/audioUtils';
 
 export default function DisplayScreen() {
   const { screenRef, isOn, metadata, audioUrl, error, isLoading } = useRadio();
+
+  // When the radio turns on/off or when new audio is loaded,
+  // animate the screen with a smooth transition.
+  useEffect(() => {
+    // Call animateScreen with the screen reference and isOn status.
+    // It will animate "in" if isOn, or animate "out" if not.
+    if (screenRef.current) {
+      animateScreen(screenRef, isOn);
+    }
+  }, [isOn, audioUrl, metadata, error, isLoading, screenRef]);
 
   return (
     <div className="glass">

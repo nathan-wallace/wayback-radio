@@ -1,4 +1,3 @@
-// PowerButton.jsx
 import React, { useRef, useEffect } from 'react';
 import { useRadio } from '../context/RadioContext';
 import { animateScreen } from '../utils/audioUtils';
@@ -7,7 +6,7 @@ import gsap from 'gsap';
 
 const click = new Howl({ src: ['./sounds/click.webm'], volume: 0.3 });
 
-export default function PowerButton() {
+export default function Button() {
   const { isOn, setIsOn, screenRef } = useRadio();
   const buttonRef = useRef(null);
   const indicatorRef = useRef(null);
