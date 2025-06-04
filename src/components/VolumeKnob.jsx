@@ -1,9 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { Draggable } from 'gsap/Draggable';
-import { gsap } from 'gsap';
 import { useRadio } from '../context/RadioContext';
-
-gsap.registerPlugin(Draggable);
+import { loadGsap } from '../utils/gsapLoader';
 
 export default function VolumeKnob() {
   const { volume, setVolume } = useRadio();
@@ -11,28 +8,33 @@ export default function VolumeKnob() {
   const dragRef = useRef(null);
 
   useEffect(() => {
-    dragRef.current = Draggable.create(knobRef.current, {
-      type: 'rotation',
-      bounds: { minRotation: 0, maxRotation: 300 },
-      onDrag: function () {
-        const newVolume = this.rotation / 300;
-        setVolume(newVolume);
-        localStorage.setItem("clientVolume", newVolume);
-      },
-    })[0];
+    let cleanup;
+    loadGsap().then(({ gsap, Draggable }) => {
+      dragRef.current = Draggable.create(knobRef.current, {
+        type: 'rotation',
+        bounds: { minRotation: 0, maxRotation: 300 },
+        onDrag: function () {
+          const newVolume = this.rotation / 300;
+          setVolume(newVolume);
+          localStorage.setItem("clientVolume", newVolume);
+        },
+      })[0];
 
-    // Initialize the knob position based on the current volume
-    gsap.set(knobRef.current, { rotation: volume * 300 });
+      gsap.set(knobRef.current, { rotation: volume * 300 });
+      cleanup = () => dragRef.current && dragRef.current.kill();
+    });
 
     return () => {
-      if (dragRef.current) dragRef.current.kill();
+      if (cleanup) cleanup();
     };
   }, []);
 
   // Keep the knob position in sync if the volume changes externally
   useEffect(() => {
     if (!knobRef.current) return;
-    gsap.to(knobRef.current, { rotation: volume * 300, duration: 0.2 });
+    loadGsap().then(({ gsap }) => {
+      gsap.to(knobRef.current, { rotation: volume * 300, duration: 0.2 });
+    });
   }, [volume]);
 
   return (

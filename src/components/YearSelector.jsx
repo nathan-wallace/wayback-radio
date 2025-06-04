@@ -1,9 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { Draggable } from 'gsap/Draggable';
-import gsap from 'gsap';
 import { useRadio } from '../context/RadioContext';
-
-gsap.registerPlugin(Draggable);
+import { loadGsap } from '../utils/gsapLoader';
 
 export default function YearSelector() {
   const { year, setYear, availableYears } = useRadio();
@@ -41,16 +38,19 @@ export default function YearSelector() {
     };
 
     container.addEventListener('scroll', handleScroll);
-    const dragInstance = Draggable.create(container, {
-      type: 'scrollLeft',
-      inertia: true,
-      edgeResistance: 0.85,
-      onDrag: handleScroll
-    })[0];
+    let dragInstance;
+    loadGsap().then(({ Draggable }) => {
+      dragInstance = Draggable.create(container, {
+        type: 'scrollLeft',
+        inertia: true,
+        edgeResistance: 0.85,
+        onDrag: handleScroll
+      })[0];
+    });
 
     return () => {
       container.removeEventListener('scroll', handleScroll);
-      dragInstance.kill();
+      if (dragInstance) dragInstance.kill();
     };
   }, [year, availableYears]);
 
