@@ -8,9 +8,10 @@ gsap.registerPlugin(Draggable);
 export default function VolumeKnob() {
   const { volume, setVolume } = useRadio();
   const knobRef = useRef(null);
+  const dragRef = useRef(null);
 
   useEffect(() => {
-    Draggable.create(knobRef.current, {
+    dragRef.current = Draggable.create(knobRef.current, {
       type: 'rotation',
       bounds: { minRotation: 0, maxRotation: 300 },
       onDrag: function () {
@@ -18,10 +19,14 @@ export default function VolumeKnob() {
         setVolume(newVolume);
         localStorage.setItem("clientVolume", newVolume);
       },
-    });
+    })[0];
 
     // Initialize the knob position based on the current volume
     gsap.set(knobRef.current, { rotation: volume * 300 });
+
+    return () => {
+      if (dragRef.current) dragRef.current.kill();
+    };
   }, []);
 
   // Keep the knob position in sync if the volume changes externally
