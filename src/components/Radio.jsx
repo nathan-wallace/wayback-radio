@@ -19,7 +19,7 @@ import VolumeKnob from './VolumeKnob';
 import TuningKnob from './TuningKnob';
 import Button from './Button';
 import YearSelector from './YearSelector';
-import './ModernRadio.css';
+import './NeonRadio.css';
 
 // Initial state for the radio.
 const initialState = {
