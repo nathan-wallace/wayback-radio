@@ -19,8 +19,16 @@ export default function VolumeKnob() {
         localStorage.setItem("clientVolume", newVolume);
       },
     });
+
+    // Initialize the knob position based on the current volume
     gsap.set(knobRef.current, { rotation: volume * 300 });
   }, []);
+
+  // Keep the knob position in sync if the volume changes externally
+  useEffect(() => {
+    if (!knobRef.current) return;
+    gsap.to(knobRef.current, { rotation: volume * 300, duration: 0.2 });
+  }, [volume]);
 
   return (
     <div className="knob-container">
