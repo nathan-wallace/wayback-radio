@@ -229,8 +229,15 @@ export default function Radio() {
       setMetadata(result.metadata);
       setError(result.error);
       setIsLoading(false);
+
+      // Prefetch adjacent years to speed up tuning
+      const currentIndex = availableYears.indexOf(year);
+      const nextYear = availableYears[currentIndex + 1];
+      if (nextYear) fetchAudioByYear(nextYear);
+      const prevYear = availableYears[currentIndex - 1];
+      if (prevYear) fetchAudioByYear(prevYear);
     })();
-  }, [year, overrideAudio, initComplete, setAudioUrl, setMetadata, setError, setIsLoading]);
+  }, [year, availableYears, overrideAudio, initComplete, setAudioUrl, setMetadata, setError, setIsLoading]);
 
   // Keep the browser URL in sync with the current state.
   useEffect(() => {

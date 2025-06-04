@@ -3,6 +3,7 @@ const BASE_URL = 'https://www.loc.gov';
 // Create caches for audio requests and available years.
 const audioCache = {};
 let availableYearsCache = null;
+const LOCAL_YEARS_KEY = 'availableYears';
 
 /**
  * Helper function to extract a unique id (UID) from an item’s id.
@@ -221,6 +222,13 @@ export async function fetchAvailableYears() {
   if (availableYearsCache) {
     return availableYearsCache;
   }
+  if (typeof localStorage !== 'undefined') {
+    const storedYears = localStorage.getItem(LOCAL_YEARS_KEY);
+    if (storedYears) {
+      availableYearsCache = { years: JSON.parse(storedYears), error: null };
+      return availableYearsCache;
+    }
+  }
   try {
     const searchUrl = `${BASE_URL}/search/?q=sound+recording&fa=original-format:sound+recording|digitized&fo=json&c=100`;
     const response = await fetch(searchUrl);
@@ -237,6 +245,9 @@ export async function fetchAvailableYears() {
     });
     const yearsArray = Array.from(yearsSet).sort((a, b) => a - b);
     availableYearsCache = { years: yearsArray, error: null };
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_YEARS_KEY, JSON.stringify(yearsArray));
+    }
     return availableYearsCache;
   } catch (error) {
     console.error('Error fetching available years:', error);
