@@ -19,7 +19,7 @@ import VolumeKnob from './VolumeKnob';
 import TuningKnob from './TuningKnob';
 import Button from './Button';
 import YearSelector from './YearSelector';
-import './Radio.css';
+import './NeonRadio.css';
 
 // Initial state for the radio.
 const initialState = {
@@ -306,9 +306,12 @@ export default function Radio() {
       <div className="radio-loading">Loading…</div>
     ) : (
       <RadioContext.Provider value={contextValue}>
-        <div className="radio-frame">
+        <div className="player-container">
+          <header className="header">
+            <h1>Wayback Radio</h1>
+            <YearSelector />
+          </header>
           <DisplayScreen />
-          <YearSelector />
           <div className="controls">
             <VolumeKnob />
             <TuningKnob />
