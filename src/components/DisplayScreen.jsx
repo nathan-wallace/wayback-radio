@@ -17,12 +17,7 @@ export default function DisplayScreen() {
   }, [isOn, audioUrl, metadata, error, isLoading, screenRef]);
 
   return (
-    <div className="glass">
-      <img
-        src="./svgs/logo.svg"
-        alt="Radio Logo"
-        className={`radio-logo ${isOn ? 'logo-off' : 'logo-on'}`}
-      />
+    <div className="display">
       <div className={`screen ${isOn ? 'on' : ''}`} ref={screenRef}>
         {isLoading && <p className="loading">Loading...</p>}
         {error && <p className="error">{error}</p>}
