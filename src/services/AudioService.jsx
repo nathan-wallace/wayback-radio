@@ -44,9 +44,10 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
          (resource.url && (resource.url.includes('.mp3') || resource.url.includes('.wav')))
       )
     );
+    const itemUids = playableItems.map(item => extractUid(item.id)).filter(Boolean);
     
     if (playableItems.length === 0) {
-      const result = { audioUrl: null, metadata: null, title: null, error: 'No playable audio found for this year.' };
+      const result = { audioUrl: null, metadata: null, title: null, error: 'No playable audio found for this year.', itemUids: [] };
       audioCache[cacheKey] = result;
       return result;
     }
@@ -89,7 +90,7 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
       }
     }
     if (!audioUrl) {
-      const result = { audioUrl: null, metadata: null, title: null, error: 'No audio URL available for this item.' };
+      const result = { audioUrl: null, metadata: null, title: null, error: 'No audio URL available for this item.', itemUids };
       audioCache[cacheKey] = result;
       return result;
     }
@@ -129,14 +130,15 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
       audioUrl,
       metadata,
       title: encodedAudioTitle,
-      error: null
+      error: null,
+      itemUids
     };
 
     audioCache[cacheKey] = result;
     return result;
   } catch (error) {
     console.error('Error fetching audio:', error);
-    const result = { audioUrl: null, metadata: null, title: null, error: 'Error fetching audio. Try another year or title.' };
+    const result = { audioUrl: null, metadata: null, title: null, error: 'Error fetching audio. Try another year or title.', itemUids: [] };
     audioCache[cacheKey] = result;
     return result;
   }

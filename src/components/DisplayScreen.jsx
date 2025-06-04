@@ -1,6 +1,7 @@
 // DisplayScreen.jsx
 import React, { useEffect } from 'react';
 import { useRadio } from '../context/RadioContext';
+import ItemNavigator from './ItemNavigator';
 import { animateScreen } from '../utils/audioUtils';
 
 export default function DisplayScreen() {
@@ -86,6 +87,7 @@ export default function DisplayScreen() {
             <br />
             <strong>Source:</strong><br />
             <a href={metadata?.url} target="_blank" rel="noopener noreferrer">{metadata?.url}</a>
+            <ItemNavigator />
           </div>
         )}
       </div>
