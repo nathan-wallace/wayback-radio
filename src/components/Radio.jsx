@@ -29,6 +29,8 @@ const initialState = {
   isOn: false,
   metadata: null,
   availableYears: [],
+  itemUids: [],
+  itemIndex: 0,
   isLoading: false,
   error: null,
 };
@@ -48,6 +50,10 @@ function radioReducer(state, action) {
       return { ...state, metadata: action.payload };
     case 'SET_AVAILABLE_YEARS':
       return { ...state, availableYears: action.payload };
+    case 'SET_ITEM_UIDS':
+      return { ...state, itemUids: action.payload };
+    case 'SET_ITEM_INDEX':
+      return { ...state, itemIndex: action.payload };
     case 'SET_IS_LOADING':
       return { ...state, isLoading: action.payload };
     case 'SET_ERROR':
@@ -74,6 +80,8 @@ export default function Radio() {
     isOn,
     metadata,
     availableYears,
+    itemUids,
+    itemIndex,
     isLoading,
     error
   } = state;
@@ -104,6 +112,14 @@ export default function Radio() {
     (years) => dispatch({ type: 'SET_AVAILABLE_YEARS', payload: years }),
     []
   );
+  const setItemUids = useCallback(
+    (uids) => dispatch({ type: 'SET_ITEM_UIDS', payload: uids }),
+    []
+  );
+  const setItemIndex = useCallback(
+    (index) => dispatch({ type: 'SET_ITEM_INDEX', payload: index }),
+    []
+  );
   const setIsLoading = useCallback(
     (isLoading) => dispatch({ type: 'SET_IS_LOADING', payload: isLoading }),
     []
@@ -112,6 +128,29 @@ export default function Radio() {
     (error) => dispatch({ type: 'SET_ERROR', payload: error }),
     []
   );
+
+  const playItemByIndex = useCallback(async (idx) => {
+    if (idx < 0 || idx >= itemUids.length) return;
+    setIsLoading(true);
+    const result = await fetchAudioById(itemUids[idx]);
+    setAudioUrl(result.audioUrl);
+    setMetadata(result.metadata);
+    setError(result.error);
+    setIsLoading(false);
+    setItemIndex(idx);
+  }, [itemUids, setIsLoading, setAudioUrl, setMetadata, setError, setItemIndex]);
+
+  const nextItem = useCallback(() => {
+    if (itemIndex < itemUids.length - 1) {
+      playItemByIndex(itemIndex + 1);
+    }
+  }, [itemIndex, itemUids, playItemByIndex]);
+
+  const prevItem = useCallback(() => {
+    if (itemIndex > 0) {
+      playItemByIndex(itemIndex - 1);
+    }
+  }, [itemIndex, playItemByIndex]);
 
   // Use custom audio manager hook.
   const { sound } = useAudioManager(audioUrl, isOn, volume);
@@ -179,6 +218,8 @@ export default function Radio() {
       setAudioUrl(result.audioUrl);
       setMetadata(result.metadata);
       setError(result.error);
+      setItemUids([initialParams.audioId]);
+      setItemIndex(0);
       setIsLoading(false);
       if (result.metadata && result.metadata.date) {
         const metadataYear = parseInt(result.metadata.date, 10);
@@ -196,6 +237,8 @@ export default function Radio() {
       const result = await fetchAudioByYear(initYear, uniqueParam);
       setAudioUrl(result.audioUrl);
       setMetadata(result.metadata);
+      setItemUids(result.itemUids || []);
+      setItemIndex(0);
       setError(result.error);
     }
     // Then update the year state and autoplay as needed.
@@ -216,7 +259,9 @@ export default function Radio() {
     setMetadata,
     setError,
     setIsLoading,
-    setAvailableYears
+    setAvailableYears,
+    setItemUids,
+    setItemIndex
   ]);
 
   // If no override is active and initialization is complete, fetch audio by year when year changes.
@@ -227,6 +272,8 @@ export default function Radio() {
       const result = await fetchAudioByYear(year);
       setAudioUrl(result.audioUrl);
       setMetadata(result.metadata);
+      setItemUids(result.itemUids || []);
+      setItemIndex(0);
       setError(result.error);
       setIsLoading(false);
 
@@ -237,7 +284,7 @@ export default function Radio() {
       const prevYear = availableYears[currentIndex - 1];
       if (prevYear) fetchAudioByYear(prevYear);
     })();
-  }, [year, availableYears, overrideAudio, initComplete, setAudioUrl, setMetadata, setError, setIsLoading]);
+  }, [year, availableYears, overrideAudio, initComplete, setAudioUrl, setMetadata, setError, setIsLoading, setItemUids, setItemIndex]);
 
   // Keep the browser URL in sync with the current state.
   useEffect(() => {
@@ -273,6 +320,10 @@ export default function Radio() {
       setMetadata,
       availableYears,
       setAvailableYears,
+      itemUids,
+      itemIndex,
+      nextItem,
+      prevItem,
       isLoading,
       setIsLoading,
       error,
@@ -286,6 +337,8 @@ export default function Radio() {
       isOn,
       metadata,
       availableYears,
+      itemUids,
+      itemIndex,
       isLoading,
       error,
       setYear,
@@ -294,6 +347,8 @@ export default function Radio() {
       setIsOn,
       setMetadata,
       setAvailableYears,
+      nextItem,
+      prevItem,
       setIsLoading,
       setError
     ]
