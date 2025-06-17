@@ -3,7 +3,12 @@ const BASE_URL = 'https://www.loc.gov';
 // Create caches for audio requests and available years.
 const audioCache = {};
 let availableYearsCache = null;
+// Prefixes for storing cached data in localStorage
 const LOCAL_YEARS_KEY = 'availableYears';
+const YEARS_CACHE_TIMESTAMP_KEY = 'availableYearsTimestamp';
+const YEARS_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const AUDIO_CACHE_PREFIX = 'audioCache-';
+const AUDIO_ID_CACHE_PREFIX = 'audioIdCache-';
 
 /**
  * Helper function to extract a unique id (UID) from an item’s id.
@@ -24,6 +29,14 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
   if (audioCache[cacheKey]) {
     console.info(`Returning cached result for key ${cacheKey}`);
     return audioCache[cacheKey];
+  }
+  if (typeof localStorage !== 'undefined') {
+    const stored = localStorage.getItem(`${AUDIO_CACHE_PREFIX}${cacheKey}`);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      audioCache[cacheKey] = parsed;
+      return parsed;
+    }
   }
 
   try {
@@ -135,11 +148,31 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
     };
 
     audioCache[cacheKey] = result;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(
+          `${AUDIO_CACHE_PREFIX}${cacheKey}`,
+          JSON.stringify(result)
+        );
+      } catch (e) {
+        console.warn('Failed to persist audio cache', e);
+      }
+    }
     return result;
   } catch (error) {
     console.error('Error fetching audio:', error);
     const result = { audioUrl: null, metadata: null, title: null, error: 'Error fetching audio. Try another year or title.', itemUids: [] };
     audioCache[cacheKey] = result;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(
+          `${AUDIO_CACHE_PREFIX}${cacheKey}`,
+          JSON.stringify(result)
+        );
+      } catch (e) {
+        console.warn('Failed to persist audio cache', e);
+      }
+    }
     return result;
   }
 }
@@ -155,6 +188,18 @@ export async function fetchAudioById(audioId) {
     requestUrl = `${BASE_URL}/item/ihas.${audioId}/?fo=json`;
   } else {
     requestUrl = `${audioId}?fo=json`;
+  }
+  const cacheKey = `${audioId}`;
+  if (audioCache[cacheKey]) {
+    return audioCache[cacheKey];
+  }
+  if (typeof localStorage !== 'undefined') {
+    const stored = localStorage.getItem(`${AUDIO_ID_CACHE_PREFIX}${cacheKey}`);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      audioCache[cacheKey] = parsed;
+      return parsed;
+    }
   }
   try {
     const response = await fetch(requestUrl);
@@ -207,13 +252,37 @@ export async function fetchAudioById(audioId) {
         location: (selectedItem.item?.location || []).join(', ') || '',
         mime_type: (selectedItem.item?.mime_type || []).join(', ') || ''
       };
-      return { audioUrl, metadata, error: null };
+      const result = { audioUrl, metadata, error: null };
+      audioCache[cacheKey] = result;
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem(
+            `${AUDIO_ID_CACHE_PREFIX}${cacheKey}`,
+            JSON.stringify(result)
+          );
+        } catch (e) {
+          console.warn('Failed to persist audio cache', e);
+        }
+      }
+      return result;
     } else {
       return { audioUrl: null, metadata: null, error: 'No audio found for that id.' };
     }
   } catch (error) {
     console.error('Error fetching audio by id:', error);
-    return { audioUrl: null, metadata: null, error: 'Error fetching audio by id.' };
+    const result = { audioUrl: null, metadata: null, error: 'Error fetching audio by id.' };
+    audioCache[cacheKey] = result;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(
+          `${AUDIO_ID_CACHE_PREFIX}${cacheKey}`,
+          JSON.stringify(result)
+        );
+      } catch (e) {
+        console.warn('Failed to persist audio cache', e);
+      }
+    }
+    return result;
   }
 }
 
@@ -226,7 +295,8 @@ export async function fetchAvailableYears() {
   }
   if (typeof localStorage !== 'undefined') {
     const storedYears = localStorage.getItem(LOCAL_YEARS_KEY);
-    if (storedYears) {
+    const ts = parseInt(localStorage.getItem(YEARS_CACHE_TIMESTAMP_KEY), 10);
+    if (storedYears && ts && Date.now() - ts < YEARS_CACHE_TTL) {
       availableYearsCache = { years: JSON.parse(storedYears), error: null };
       return availableYearsCache;
     }
@@ -249,10 +319,17 @@ export async function fetchAvailableYears() {
     availableYearsCache = { years: yearsArray, error: null };
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(LOCAL_YEARS_KEY, JSON.stringify(yearsArray));
+      localStorage.setItem(YEARS_CACHE_TIMESTAMP_KEY, Date.now().toString());
     }
     return availableYearsCache;
   } catch (error) {
     console.error('Error fetching available years:', error);
+    if (typeof localStorage !== 'undefined') {
+      const storedYears = localStorage.getItem(LOCAL_YEARS_KEY);
+      if (storedYears) {
+        return { years: JSON.parse(storedYears), error: 'Error fetching available years.' };
+      }
+    }
     return { years: [], error: 'Error fetching available years.' };
   }
 }
