@@ -6,11 +6,13 @@ export default function ItemNavigator() {
   const { nextItem, prevItem, itemUids, itemIndex, isOn } = useRadio();
   const screenRef = useRef(null);
 
+  // Always animate the item screen to an "on" state so the black
+  // background remains visible even when the radio is off.
   useEffect(() => {
     if (screenRef.current) {
-      animateScreen(screenRef, isOn);
+      animateScreen(screenRef, true);
     }
-  }, [isOn]);
+  }, []);
 
   const countText =
     isOn && itemUids && itemUids.length > 0
