@@ -307,11 +307,22 @@ button svg{
 }
 
 .item-navigation button {
-  width: 2.5em;
-  height: 2.5em;
+  width: 2em;
+  height: 3.5em;
   padding: 0;
   font-size: 1.2em;
-  border-radius: 50%;
+  border-radius: 0.25em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.item-screen {
+  background: linear-gradient(45deg, #101010, #000000);
+  box-shadow: inset 0 0 0.5em #000;
+  border-radius: 0.25em;
+  width: 5em;
+  height: 3.5em;
   display: flex;
   align-items: center;
   justify-content: center;
