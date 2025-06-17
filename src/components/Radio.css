@@ -301,7 +301,7 @@ button svg{
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 0.5em;
+  gap: 1em;
 }
 
 .item-navigation button {
@@ -312,7 +312,6 @@ button svg{
 
 .item-screen {
   background: linear-gradient(45deg, #101010, #000000);
-    max-width: 30em;
     min-width: 7em;
     min-height: 3em;
     width: 100%;
