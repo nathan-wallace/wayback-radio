@@ -15,8 +15,7 @@ import {
 } from '../services/AudioService';
 import { useAudioManager } from '../hooks/useAudioManager';
 import DisplayScreen from './DisplayScreen';
-import VolumeKnob from './VolumeKnob';
-import TuningKnob from './TuningKnob';
+import ItemNavigator from './ItemNavigator';
 import Button from './Button';
 import YearSelector from './YearSelector';
 import './Radio.css';
@@ -365,8 +364,7 @@ export default function Radio() {
           <DisplayScreen />
           <YearSelector />
           <div className="controls">
-            <VolumeKnob />
-            <TuningKnob />
+            <ItemNavigator />
             <Button />
           </div>
         </div>
