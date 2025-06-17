@@ -27,7 +27,7 @@ export default function ItemNavigator() {
         ◀
       </button>
       <div className="item-screen">
-        <div className="screen" ref={screenRef}>
+        <div className="" ref={screenRef}>
           {countText}
         </div>
       </div>

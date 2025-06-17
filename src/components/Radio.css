@@ -303,14 +303,11 @@ button svg{
   justify-content: center;
   align-items: center;
   gap: 0.5em;
-  margin-top: 0.5rem;
 }
 
 .item-navigation button {
-  width: 2em;
-  height: 3.5em;
-  padding: 0;
-  font-size: 1.2em;
+  width: 3em;
+  height: 4.5em;
   border-radius: 0.25em;
   display: flex;
   align-items: center;
@@ -319,13 +316,12 @@ button svg{
 
 .item-screen {
   background: linear-gradient(45deg, #101010, #000000);
-  box-shadow: inset 0 0 0.5em #000;
-  border-radius: 0.25em;
-  width: 5em;
-  height: 3.5em;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+    max-width: 30em;
+    width: 100%;
+    margin: 0.5em 0;
+    border-radius: 0.5em;
+    box-shadow: inset 0 0 0.5em #000;
+    position: relative;
 }
 
 /* Additional styling for loading, error, and now-playing text */
