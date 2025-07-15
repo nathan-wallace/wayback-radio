@@ -356,6 +356,9 @@ button svg{
   #app{
     position: fixed;
     height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
   }
   .radio-frame {
     padding: 1em;
