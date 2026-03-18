@@ -136,7 +136,7 @@ body {
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   display: flex;
-  height: 3em;
+  min-height: 4.5rem;
   background: linear-gradient(45deg, #101010, #000000);
   border-radius: 10px;
   box-shadow: inset 0 0 10px #000;
@@ -149,30 +149,81 @@ body {
 .year-indicator .years {
   display: flex;
   gap: 0.5em;
-  padding-left: calc(50% - 1.5em);
-  padding-right: calc(50% - 1.5em);
-  align-items: center;
-  margin-top: 0.5rem;
+  padding: 0.5rem calc(50% - 2.75rem);
+  align-items: stretch;
 }
 
 .year {
   flex: 0 0 auto;
-  min-width: 3em;
-  padding: 0.5em;
+  min-width: 5.5rem;
+  padding: 0.45rem 0.65rem;
   text-align: center;
   background: #ffffff21;
   color: #eeec;
-  border-radius: 0.3em;
+  border-radius: 0.45em;
+  border: 1px solid transparent;
   scroll-snap-align: center;
   user-select: none;
-  transition: transform 0.2s, background-color 0.2s, color 0.2s;
+  transition: transform 0.2s, background-color 0.2s, color 0.2s, border-color 0.2s;
+  appearance: none;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.15rem;
+}
+
+.year:hover,
+.year:focus-visible {
+  border-color: #c7bd80;
+  outline: none;
 }
 
 .year.active {
   background: #c7bd80;
   color: #222;
   box-shadow: inset 0 0 5px #000, 0 0 10px #ffd90087;
-  transform: scale(1.1);
+  transform: scale(1.05);
+}
+
+.year.is-empty {
+  color: #c9c9c9;
+  background: #ffffff14;
+}
+
+.year-value {
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.year-meta {
+  font-size: 0.68rem;
+  line-height: 1.15;
+  opacity: 0.9;
+}
+
+.year-select-mobile {
+  display: none;
+  width: 100%;
+  margin: 0.5rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid #c7bd80;
+  background: #111;
+  color: #f3f0d8;
+  font: inherit;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .indicator {
@@ -422,27 +473,20 @@ button svg{
   }
 
   .year-indicator {
-    margin: 0.5em 0;
-    width: 100%;
-    max-width: 100%;
-    height: auto;
-    min-height: 48px;
+    display: none;
   }
 
-  .year-indicator .years {
-    margin-top: .9rem;
-}
+  .year-select-mobile {
+    display: block;
+  }
+
   .year-indicator-wrapper{
     width: -webkit-fill-available;
   }
-  .year {
-    min-width: 2.5em;
-    font-size: 0.85rem;
-    padding: 0.4em;
-  }
+
   .indicator {
-    height: 3.4rem;
-}
+    display: none;
+  }
 
   .loading,
   .error,

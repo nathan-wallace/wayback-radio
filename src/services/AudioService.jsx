@@ -16,8 +16,44 @@ const requestCache = new Map();
 const bootstrapAudioByYear = archiveCache?.audioByYear || {};
 const bootstrapAvailableYears = archiveCache?.availableYears || [];
 
+function normalizeYearEntries(entries = []) {
+  if (!Array.isArray(entries)) return [];
+
+  const normalizedByYear = new Map();
+
+  entries.forEach((entry) => {
+    const source = typeof entry === 'number' ? { value: entry } : (entry || {});
+    const rawYear = source.value ?? source.year;
+    const year = Number.parseInt(rawYear, 10);
+
+    if (!Number.isInteger(year)) return;
+
+    const rawCount = source.count ?? source.itemCount ?? source.itemsCount;
+    const parsedCount = rawCount == null ? null : Number.parseInt(rawCount, 10);
+    const count = Number.isNaN(parsedCount) ? null : parsedCount;
+    const hasRecordings = typeof source.hasRecordings === 'boolean'
+      ? source.hasRecordings
+      : count == null
+        ? true
+        : count > 0;
+    const description = hasRecordings
+      ? `${count ?? 'Available'} recording${count === 1 ? '' : 's'}`
+      : 'No recordings';
+
+    normalizedByYear.set(year, {
+      value: year,
+      year,
+      count,
+      hasRecordings,
+      label: `${year} — ${description}`
+    });
+  });
+
+  return Array.from(normalizedByYear.values()).sort((a, b) => a.value - b.value);
+}
+
 let availableYearsCache = bootstrapAvailableYears.length
-  ? { years: bootstrapAvailableYears, error: null }
+  ? { years: normalizeYearEntries(bootstrapAvailableYears), error: null }
   : null;
 
 function extractUid(itemId) {
@@ -434,12 +470,12 @@ export async function fetchAvailableYears() {
 
   const localYears = readLocalCache(LOCAL_YEARS_KEY, YEARS_CACHE_TIMESTAMP_KEY, YEARS_CACHE_TTL);
   if (localYears) {
-    availableYearsCache = { years: localYears, error: null };
+    availableYearsCache = { years: normalizeYearEntries(localYears), error: null };
     return availableYearsCache;
   }
 
   if (bootstrapAvailableYears.length) {
-    availableYearsCache = { years: bootstrapAvailableYears, error: null };
+    availableYearsCache = { years: normalizeYearEntries(bootstrapAvailableYears), error: null };
     return availableYearsCache;
   }
 
@@ -448,17 +484,20 @@ export async function fetchAvailableYears() {
     const response = await fetch(searchUrl);
     const data = await response.json();
     const items = data.results || [];
-    const yearsSet = new Set();
+    const yearCounts = new Map();
 
     items.forEach((item) => {
       if (!item.date) return;
       const match = item.date.match(/\b(18|19|20)\d{2}\b/);
       if (match) {
-        yearsSet.add(Number.parseInt(match[0], 10));
+        const matchedYear = Number.parseInt(match[0], 10);
+        yearCounts.set(matchedYear, (yearCounts.get(matchedYear) || 0) + 1);
       }
     });
 
-    const yearsArray = Array.from(yearsSet).sort((a, b) => a - b);
+    const yearsArray = normalizeYearEntries(
+      Array.from(yearCounts.entries(), ([value, count]) => ({ value, count, hasRecordings: count > 0 }))
+    );
     availableYearsCache = { years: yearsArray, error: null };
     writeLocalCache(LOCAL_YEARS_KEY, YEARS_CACHE_TIMESTAMP_KEY, yearsArray);
     return availableYearsCache;
@@ -471,7 +510,7 @@ export async function fetchAvailableYears() {
     if (staleYears) {
       try {
         return {
-          years: JSON.parse(staleYears),
+          years: normalizeYearEntries(JSON.parse(staleYears)),
           error: 'Error fetching available years.'
         };
       } catch (parseError) {
@@ -479,6 +518,6 @@ export async function fetchAvailableYears() {
       }
     }
 
-    return { years: bootstrapAvailableYears, error: 'Error fetching available years.' };
+    return { years: normalizeYearEntries(bootstrapAvailableYears), error: 'Error fetching available years.' };
   }
 }
