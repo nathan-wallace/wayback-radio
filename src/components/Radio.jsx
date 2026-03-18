@@ -1,6 +1,12 @@
 // Radio.jsx
 import React, { useMemo } from 'react';
 import { RadioContext } from '../context/RadioContext';
+import {
+  fetchAvailableYears,
+  fetchAudioByYear,
+  fetchAudioById,
+  mergeCatalogYearEntry
+} from '../services/AudioService';
 import { useAudioManager } from '../hooks/useAudioManager';
 import { useRadioController } from '../hooks/useRadioController';
 import DisplayScreen from './DisplayScreen';
@@ -9,41 +15,21 @@ import Button from './Button';
 import YearSelector from './YearSelector';
 import './Radio.css';
 
-// Initial state for the radio.
 const initialState = {
   year: 1940,
   audioUrl: null,
   volume: 0.5,
   isOn: false,
   metadata: null,
-  availableYears: [],
-  availableYearOptions: [],
+  catalog: [],
+  catalogSource: null,
   itemUids: [],
   itemIndex: 0,
   isLoading: false,
+  isCatalogLoading: true,
   error: null,
 };
 
-function buildYearLabel(yearValue, count) {
-  return `${yearValue} — ${count > 0
-    ? `${count} recording${count === 1 ? '' : 's'}`
-    : 'No recordings'}`;
-}
-
-function mergeYearOption(options, yearValue, count = null, hasRecordings = count > 0) {
-  const normalizedOption = {
-    value: yearValue,
-    year: yearValue,
-    count,
-    hasRecordings,
-    label: buildYearLabel(yearValue, count ?? 0)
-  };
-
-  const withoutYear = options.filter((option) => option.value !== yearValue);
-  return [...withoutYear, normalizedOption].sort((a, b) => a.value - b.value);
-}
-
-// Reducer to centralize state updates.
 function radioReducer(state, action) {
   switch (action.type) {
     case 'SET_YEAR':
@@ -56,26 +42,22 @@ function radioReducer(state, action) {
       return { ...state, isOn: action.payload };
     case 'SET_METADATA':
       return { ...state, metadata: action.payload };
-    case 'SET_AVAILABLE_YEARS':
-      return {
-        ...state,
-        availableYears: typeof action.payload === 'function'
-          ? action.payload(state.availableYears)
-          : action.payload
-      };
-    case 'SET_AVAILABLE_YEAR_OPTIONS':
-      return {
-        ...state,
-        availableYearOptions: typeof action.payload === 'function'
-          ? action.payload(state.availableYearOptions)
-          : action.payload
-      };
+    case 'SET_CATALOG': {
+      const nextCatalog = typeof action.payload === 'function'
+        ? action.payload(state.catalog)
+        : action.payload;
+      return { ...state, catalog: nextCatalog };
+    }
+    case 'SET_CATALOG_SOURCE':
+      return { ...state, catalogSource: action.payload };
     case 'SET_ITEM_UIDS':
       return { ...state, itemUids: action.payload };
     case 'SET_ITEM_INDEX':
       return { ...state, itemIndex: action.payload };
     case 'SET_IS_LOADING':
       return { ...state, isLoading: action.payload };
+    case 'SET_IS_CATALOG_LOADING':
+      return { ...state, isCatalogLoading: action.payload };
     case 'SET_ERROR':
       return { ...state, error: action.payload };
     default:
@@ -88,6 +70,7 @@ export default function Radio() {
   const [initialParams, setInitialParams] = useState(null);
   const [overrideAudio, setOverrideAudio] = useState(false);
   const [initComplete, setInitComplete] = useState(false);
+  const initStartedRef = useRef(false);
 
   const {
     year,
@@ -95,14 +78,27 @@ export default function Radio() {
     volume,
     isOn,
     metadata,
-    availableYears,
-    availableYearOptions,
+    catalog,
+    catalogSource,
     itemUids,
     itemIndex,
     isLoading,
+    isCatalogLoading,
     error
   } = state;
   const screenRef = useRef(null);
+
+  const availableYears = useMemo(
+    () => catalog
+      .filter((entry) => entry.itemCount !== 0)
+      .map((entry) => entry.year),
+    [catalog]
+  );
+
+  const catalogByYear = useMemo(
+    () => new Map(catalog.map((entry) => [entry.year, entry])),
+    [catalog]
+  );
 
   const setYear = useCallback(
     (nextYear) => dispatch({ type: 'SET_YEAR', payload: nextYear }),
@@ -124,12 +120,12 @@ export default function Radio() {
     (nextMetadata) => dispatch({ type: 'SET_METADATA', payload: nextMetadata }),
     []
   );
-  const setAvailableYears = useCallback(
-    (yearsOrUpdater) => dispatch({ type: 'SET_AVAILABLE_YEARS', payload: yearsOrUpdater }),
+  const setCatalog = useCallback(
+    (entriesOrUpdater) => dispatch({ type: 'SET_CATALOG', payload: entriesOrUpdater }),
     []
   );
-  const setAvailableYearOptions = useCallback(
-    (optionsOrUpdater) => dispatch({ type: 'SET_AVAILABLE_YEAR_OPTIONS', payload: optionsOrUpdater }),
+  const setCatalogSource = useCallback(
+    (nextCatalogSource) => dispatch({ type: 'SET_CATALOG_SOURCE', payload: nextCatalogSource }),
     []
   );
   const setItemUids = useCallback(
@@ -144,20 +140,18 @@ export default function Radio() {
     (nextIsLoading) => dispatch({ type: 'SET_IS_LOADING', payload: nextIsLoading }),
     []
   );
+  const setIsCatalogLoading = useCallback(
+    (nextValue) => dispatch({ type: 'SET_IS_CATALOG_LOADING', payload: nextValue }),
+    []
+  );
   const setError = useCallback(
     (nextError) => dispatch({ type: 'SET_ERROR', payload: nextError }),
     []
   );
 
-  const syncYearCatalogState = useCallback((yearValue, result) => {
-    const count = result?.itemUids?.length ?? (result?.audioUrl ? 1 : 0);
-
-    setAvailableYears((prevYears) => {
-      if (prevYears.includes(yearValue)) return prevYears;
-      return [...prevYears, yearValue].sort((a, b) => a - b);
-    });
-    setAvailableYearOptions((prevOptions) => mergeYearOption(prevOptions, yearValue, count, count > 0));
-  }, [setAvailableYearOptions, setAvailableYears]);
+  const ensureCatalogYear = useCallback((targetYear, entryPatch = {}) => {
+    setCatalog((currentCatalog) => mergeCatalogYearEntry(currentCatalog, targetYear, entryPatch));
+  }, [setCatalog]);
 
   const playItemByIndex = useCallback(async (idx) => {
     if (idx < 0 || idx >= itemUids.length) return;
@@ -175,7 +169,7 @@ export default function Radio() {
     if (itemIndex < itemUids.length - 1) {
       playItemByIndex(itemIndex + 1);
     }
-  }, [itemIndex, itemUids, playItemByIndex]);
+  }, [itemIndex, itemUids.length, playItemByIndex]);
 
   const prevItem = useCallback(() => {
     if (itemIndex > 0) {
@@ -191,44 +185,53 @@ export default function Radio() {
   }, [setVolume]);
 
   useEffect(() => {
-    async function loadYears() {
-      const { years, error: yearsError } = await fetchAvailableYears();
-      if (yearsError) {
-        setError(yearsError);
+    async function loadCatalog() {
+      setIsCatalogLoading(true);
+      const catalogResult = await fetchAvailableYears();
+      setCatalog(catalogResult.entries || []);
+      setCatalogSource(catalogResult.source || null);
+      if (catalogResult.error) {
+        setError(catalogResult.error);
       }
-      if (years) {
-        setAvailableYearOptions(years);
-        setAvailableYears(years.map(({ value }) => value));
-      }
+      setIsCatalogLoading(false);
     }
 
-    loadYears();
-  }, [setAvailableYearOptions, setAvailableYears, setError]);
+    loadCatalog();
+  }, [setCatalog, setCatalogSource, setError, setIsCatalogLoading]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const yearParam = params.get('year');
+    const autoplayParam = params.get('autoplay');
+    const audioIdParam = params.get('audioId');
+    const audioTitleParam = params.get('audioTitle');
     setInitialParams({
-      year: params.get('year'),
-      autoplay: params.get('autoplay'),
-      audioId: params.get('audioId')
+      year: yearParam,
+      autoplay: autoplayParam,
+      audioId: audioIdParam,
+      audioTitle: audioTitleParam,
     });
   }, []);
 
   useEffect(() => {
-    if (!initialParams || availableYears.length === 0 || initComplete) return;
+    if (!initialParams || isCatalogLoading || initComplete || initStartedRef.current) return;
+    initStartedRef.current = true;
 
-    let initYear;
+    let initYear = availableYears[0] ?? year;
+
     if (initialParams.year) {
       const urlYear = parseInt(initialParams.year, 10);
-      if (availableYears.includes(urlYear)) {
+      if (!Number.isNaN(urlYear)) {
         initYear = urlYear;
-      } else {
-        initYear = urlYear;
-        setAvailableYears((prev) => [...prev, urlYear].sort((a, b) => a - b));
-        setAvailableYearOptions((prev) => mergeYearOption(prev, urlYear, 0, false));
+
+        if (!catalogByYear.has(urlYear)) {
+          ensureCatalogYear(urlYear, {
+            itemCount: 0,
+            sampleItemIds: [],
+            status: 'uncatalogued'
+          });
+        }
       }
-    } else {
-      initYear = availableYears[0];
     }
 
     async function initAudio() {
@@ -243,10 +246,17 @@ export default function Radio() {
         setItemIndex(0);
         setIsLoading(false);
 
-        if (result.metadata?.date) {
+        if (result.metadata && result.metadata.date) {
           const metadataYear = parseInt(result.metadata.date, 10);
-          syncYearCatalogState(metadataYear, result);
-          initYear = metadataYear;
+          if (!Number.isNaN(metadataYear)) {
+            const existingEntry = catalogByYear.get(metadataYear);
+            ensureCatalogYear(metadataYear, {
+              itemCount: existingEntry?.itemCount ?? Math.max(result.audioUrl ? 1 : 0, 0),
+              sampleItemIds: existingEntry?.sampleItemIds || [initialParams.audioId],
+              status: result.audioUrl ? 'ready' : 'empty'
+            });
+            initYear = metadataYear;
+          }
         }
       } else {
         const result = await fetchAudioByYear(initYear, initialParams.audioTitle);
@@ -255,7 +265,15 @@ export default function Radio() {
         setItemUids(result.itemUids || []);
         setItemIndex(0);
         setError(result.error);
-        syncYearCatalogState(initYear, result);
+
+        const existingEntry = catalogByYear.get(initYear);
+        ensureCatalogYear(initYear, {
+          itemCount: existingEntry?.itemCount ?? (result.itemUids?.length || (result.audioUrl ? 1 : 0)),
+          sampleItemIds: existingEntry?.sampleItemIds?.length
+            ? existingEntry.sampleItemIds
+            : (result.itemUids || []).slice(0, 3),
+          status: result.audioUrl ? 'ready' : 'empty'
+        });
       }
 
       setYear(initYear);
@@ -268,15 +286,18 @@ export default function Radio() {
     initAudio();
   }, [
     initialParams,
+    isCatalogLoading,
+    initComplete,
     availableYears,
+    year,
+    catalogByYear,
+    ensureCatalogYear,
     setYear,
     setIsOn,
     setAudioUrl,
     setMetadata,
     setError,
     setIsLoading,
-    setAvailableYears,
-    setAvailableYearOptions,
     setItemUids,
     setItemIndex,
     syncYearCatalogState,
@@ -285,6 +306,16 @@ export default function Radio() {
 
   useEffect(() => {
     if (!initComplete || overrideAudio) return;
+
+    const selectedCatalogEntry = catalogByYear.get(year);
+    if (selectedCatalogEntry && selectedCatalogEntry.itemCount === 0) {
+      setAudioUrl(null);
+      setMetadata(null);
+      setItemUids(selectedCatalogEntry.sampleItemIds || []);
+      setItemIndex(0);
+      setError(`No playable recordings cataloged for ${year}.`);
+      return;
+    }
 
     (async () => {
       setIsLoading(true);
@@ -297,6 +328,14 @@ export default function Radio() {
       syncYearCatalogState(year, result);
       setIsLoading(false);
 
+      ensureCatalogYear(year, {
+        itemCount: selectedCatalogEntry?.itemCount ?? (result.itemUids?.length || (result.audioUrl ? 1 : 0)),
+        sampleItemIds: selectedCatalogEntry?.sampleItemIds?.length
+          ? selectedCatalogEntry.sampleItemIds
+          : (result.itemUids || []).slice(0, 3),
+        status: result.audioUrl ? 'ready' : 'empty'
+      });
+
       const currentIndex = availableYears.indexOf(year);
       const nextYear = availableYears[currentIndex + 1];
       if (nextYear) fetchAudioByYear(nextYear);
@@ -306,15 +345,16 @@ export default function Radio() {
   }, [
     year,
     availableYears,
+    catalogByYear,
     overrideAudio,
     initComplete,
+    ensureCatalogYear,
     setAudioUrl,
     setMetadata,
     setError,
     setIsLoading,
     setItemUids,
-    setItemIndex,
-    syncYearCatalogState
+    setItemIndex
   ]);
 
   useEffect(() => {
@@ -326,12 +366,13 @@ export default function Radio() {
     } else {
       params.delete('autoplay');
     }
-    if (overrideAudio && initialParams?.audioId) {
+    if (overrideAudio && initialParams && initialParams.audioId) {
       params.set('audioId', initialParams.audioId);
     } else {
       params.delete('audioId');
     }
-    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
+    const newUrl = window.location.pathname + '?' + params.toString();
+    window.history.replaceState({}, '', newUrl);
   }, [year, isOn, overrideAudio, initialParams, initComplete]);
 
   const contextValue = useMemo(
@@ -346,15 +387,16 @@ export default function Radio() {
       setIsOn,
       metadata,
       setMetadata,
+      catalog,
+      catalogSource,
       availableYears,
-      availableYearOptions,
-      setAvailableYears,
-      setAvailableYearOptions,
+      setCatalog,
       itemUids,
       itemIndex,
       nextItem,
       prevItem,
       isLoading,
+      isCatalogLoading,
       setIsLoading,
       error,
       setError,
@@ -366,19 +408,21 @@ export default function Radio() {
       volume,
       isOn,
       metadata,
+      catalog,
+      catalogSource,
       availableYears,
       availableYearOptions,
       itemUids,
       itemIndex,
       isLoading,
+      isCatalogLoading,
       error,
       setYear,
       setAudioUrl,
       setVolume,
       setIsOn,
       setMetadata,
-      setAvailableYears,
-      setAvailableYearOptions,
+      setCatalog,
       nextItem,
       prevItem,
       setIsLoading,

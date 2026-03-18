@@ -8,6 +8,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const outputPath = path.join(repoRoot, 'src', 'data', 'archive-cache.json');
 const BASE_URL = 'https://www.loc.gov';
 const SEARCH_URL = `${BASE_URL}/search/?q=sound+recording&fa=original-format:sound+recording|digitized&fo=json&c=100`;
+const MAX_SAMPLE_IDS = 3;
 
 function extractUid(itemId) {
   if (!itemId) return null;
@@ -67,6 +68,16 @@ function buildMetadata(itemData, fallbackYear, selectedItem) {
   };
 }
 
+function isPlayableSearchItem(item) {
+  return item.resources?.some((resource) => (
+    resource.audio
+    || resource.url?.match(/\.(mp3|wav)$/i)
+    || resource.files?.some((file) => (
+      file.mimetype?.includes('audio') || file.url?.match(/\.(mp3|wav)$/i)
+    ))
+  ));
+}
+
 async function fetchJson(url) {
   const response = await fetch(url, {
     headers: {
@@ -81,27 +92,45 @@ async function fetchJson(url) {
   return response.json();
 }
 
-async function fetchAvailableYearsWithSamples() {
+async function fetchCatalogWithSamples() {
   const data = await fetchJson(SEARCH_URL);
   const yearlySamples = new Map();
 
   for (const item of data.results || []) {
     const year = extractYear(item.date);
-    const hasPlayableAudio = item.resources?.some((resource) => (
-      resource.audio || resource.url?.match(/\.(mp3|wav)$/i)
-    ));
 
-    if (!year || !hasPlayableAudio || yearlySamples.has(year)) {
+    if (!year || !isPlayableSearchItem(item)) {
       continue;
     }
 
-    yearlySamples.set(year, item);
+    const existing = yearlySamples.get(year) || {
+      year,
+      itemCount: 0,
+      sampleItemIds: [],
+      sampleItem: null,
+      status: 'ready'
+    };
+
+    existing.itemCount += 1;
+
+    const uid = extractUid(item.id);
+    if (uid && !existing.sampleItemIds.includes(uid)) {
+      existing.sampleItemIds.push(uid);
+      existing.sampleItemIds = existing.sampleItemIds.slice(0, MAX_SAMPLE_IDS);
+    }
+
+    if (!existing.sampleItem) {
+      existing.sampleItem = item;
+    }
+
+    yearlySamples.set(year, existing);
   }
 
-  return Array.from(yearlySamples.entries()).sort((a, b) => a[0] - b[0]);
+  return Array.from(yearlySamples.values()).sort((a, b) => a.year - b.year);
 }
 
-async function buildYearCache([year, selectedItem]) {
+async function buildYearCache(entry) {
+  const selectedItem = entry.sampleItem;
   const itemId = selectedItem.id
     .replace(/^https?:\/\/(www\.)?loc\.gov\/item\//, '')
     .replace(/\/$/, '');
@@ -110,25 +139,25 @@ async function buildYearCache([year, selectedItem]) {
   const audioUrl = getAudioUrl(itemData);
 
   if (!audioUrl) {
-    return [String(year), null];
+    return [String(entry.year), null];
   }
 
-  return [String(year), {
+  return [String(entry.year), {
     audioUrl,
-    metadata: buildMetadata(itemData, year, selectedItem),
-    title: encodeURIComponent(itemId || itemData.title || String(year)),
+    metadata: buildMetadata(itemData, entry.year, selectedItem),
+    title: encodeURIComponent(itemId || itemData.title || String(entry.year)),
     error: null,
-    itemUids: [extractUid(selectedItem.id)].filter(Boolean)
+    itemUids: entry.sampleItemIds
   }];
 }
 
 async function main() {
-  console.log('Fetching yearly archive samples from the Library of Congress API...');
-  const yearEntries = await fetchAvailableYearsWithSamples();
-  const availableYears = yearEntries.map(([year]) => year);
+  console.log('Fetching yearly archive catalog from the Library of Congress API...');
+  const catalogEntries = await fetchCatalogWithSamples();
+  const availableYears = catalogEntries.map((entry) => entry.year);
   const audioByYear = {};
 
-  for (const entry of yearEntries) {
+  for (const entry of catalogEntries) {
     const [year, yearCache] = await buildYearCache(entry);
     if (yearCache) {
       audioByYear[year] = yearCache;
@@ -138,9 +167,15 @@ async function main() {
     }
   }
 
+  const generatedAt = new Date().toISOString();
   const payload = {
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     source: SEARCH_URL,
+    catalog: {
+      generatedAt,
+      source: SEARCH_URL,
+      entries: catalogEntries.map(({ sampleItem, ...entry }) => entry)
+    },
     availableYears,
     audioByYear
   };

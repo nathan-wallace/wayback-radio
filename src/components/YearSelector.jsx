@@ -12,12 +12,7 @@ function getYearDescription(option) {
 }
 
 export default function YearSelector() {
-  const {
-    year,
-    setYear,
-    availableYears,
-    availableYearOptions = []
-  } = useRadio();
+  const { year, setYear, catalog, availableYears, isCatalogLoading } = useRadio();
   const containerRef = useRef(null);
   const buttonRefs = useRef([]);
   const yearRef = useRef(year);
@@ -48,6 +43,33 @@ export default function YearSelector() {
 
     let dragInstance;
 
+    const handleScroll = () => {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        const center = container.scrollLeft + container.clientWidth / 2;
+        const years = container.querySelectorAll('.year:not(.year-disabled)');
+        let closest = null;
+        let minDiff = Infinity;
+
+        years.forEach((el) => {
+          const elCenter = el.offsetLeft + el.offsetWidth / 2;
+          const diff = Math.abs(elCenter - center);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closest = el;
+          }
+        });
+
+        if (closest) {
+          const newYear = Number.parseInt(closest.textContent, 10);
+          if (newYear !== yearRef.current) {
+            setYear(newYear);
+          }
+        }
+      }, 50);
+    };
+
+    container.addEventListener('scroll', handleScroll);
     loadGsap().then(({ Draggable }) => {
       dragInstance = Draggable.create(container, {
         type: 'scrollLeft',
@@ -59,7 +81,7 @@ export default function YearSelector() {
     return () => {
       if (dragInstance) dragInstance.kill();
     };
-  }, [yearOptions]);
+  }, [catalog, setYear]);
 
   useEffect(() => {
     const selectedIndex = yearOptions.findIndex((option) => option.value === year);
@@ -73,47 +95,7 @@ export default function YearSelector() {
         inline: 'center'
       });
     }
-  }, [year, yearOptions]);
-
-  const focusYearAtIndex = (index, shouldSelect = true) => {
-    const nextOption = yearOptions[index];
-    const nextButton = buttonRefs.current[index];
-
-    if (!nextOption || !nextButton) return;
-
-    nextButton.focus();
-    if (shouldSelect && nextOption.value !== yearRef.current) {
-      setYear(nextOption.value);
-    }
-  };
-
-  const handleKeyDown = (event, index) => {
-    if (yearOptions.length === 0) return;
-
-    let nextIndex = null;
-
-    switch (event.key) {
-      case 'ArrowRight':
-      case 'ArrowDown':
-        nextIndex = Math.min(index + 1, yearOptions.length - 1);
-        break;
-      case 'ArrowLeft':
-      case 'ArrowUp':
-        nextIndex = Math.max(index - 1, 0);
-        break;
-      case 'Home':
-        nextIndex = 0;
-        break;
-      case 'End':
-        nextIndex = yearOptions.length - 1;
-        break;
-      default:
-        return;
-    }
-
-    event.preventDefault();
-    focusYearAtIndex(nextIndex);
-  };
+  }, [year, catalog]);
 
   return (
     <div className="year-indicator-wrapper" style={{ position: 'relative' }}>
@@ -141,32 +123,38 @@ export default function YearSelector() {
         aria-activedescendant={`year-option-${year}`}
       >
         <div className="years">
-          {yearOptions.map((option, index) => {
-            const description = getYearDescription(option);
-            const isSelected = option.value === year;
+          {catalog.map((entry) => {
+            const isDisabled = entry.itemCount === 0;
+            const isLoadingEntry = entry.itemCount == null || isCatalogLoading;
+            const title = isDisabled
+              ? `${entry.year}: no playable recordings cataloged`
+              : `${entry.year}: ${entry.itemCount ?? '…'} playable recordings`;
 
             return (
-              <button
-                key={option.value}
-                id={`year-option-${option.value}`}
-                ref={(element) => {
-                  buttonRefs.current[index] = element;
+              <span
+                key={entry.year}
+                className={`year ${entry.year === year ? 'active' : ''} ${isDisabled ? 'year-disabled' : ''} ${isLoadingEntry ? 'year-loading' : ''}`}
+                onClick={() => {
+                  if (!isDisabled) {
+                    setYear(entry.year);
+                  }
                 }}
-                type="button"
-                role="option"
-                className={`year ${isSelected ? 'active' : ''} ${!option.hasRecordings ? 'is-empty' : ''}`}
-                tabIndex={isSelected ? 0 : -1}
-                aria-selected={isSelected}
-                aria-label={`${option.value}. ${description}.`}
-                title={option.label}
-                onClick={() => setYear(option.value)}
-                onKeyDown={(event) => handleKeyDown(event, index)}
+                style={{
+                  opacity: isDisabled ? 0.45 : 1,
+                  cursor: isDisabled ? 'not-allowed' : 'pointer'
+                }}
+                title={title}
+                aria-disabled={isDisabled}
               >
-                <span className="year-value">{option.value}</span>
-                <span className="year-meta" aria-hidden="true">{description}</span>
-              </button>
+                {entry.year}
+              </span>
             );
           })}
+          {!catalog.length && availableYears.map((availableYear) => (
+            <span key={availableYear} className={`year ${availableYear === year ? 'active' : ''}`}>
+              {availableYear}
+            </span>
+          ))}
         </div>
       </div>
       <div className="indicator" aria-hidden="true"></div>
