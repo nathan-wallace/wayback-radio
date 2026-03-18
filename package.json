@@ -6,7 +6,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "jest",
-    "generate:archive-cache": "node scripts/generate-archive-cache.mjs"
+    "generate:archive-cache": "node scripts/generate-archive-cache.mjs",
+    "test:functional": "playwright test",
+    "test:functional:ui": "playwright test --ui",
+    "test:functional:install": "playwright install --with-deps chromium"
   },
   "dependencies": {
     "axios": "^1.4.0",
@@ -19,6 +22,7 @@
     "@babel/core": "^7.27.4",
     "@babel/preset-env": "^7.27.2",
     "@babel/preset-react": "^7.27.1",
+    "@playwright/test": "^1.58.2",
     "@vitejs/plugin-react": "^3.0.0",
     "babel-jest": "^30.0.0-beta.3",
     "jest": "^29.7.0",
