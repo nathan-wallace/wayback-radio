@@ -2,19 +2,25 @@
 import React, { useEffect } from 'react';
 import { useRadio } from '../context/RadioContext';
 import { animateScreen } from '../utils/audioUtils';
+import MetadataPanel from './MetadataPanel';
 
 export default function DisplayScreen() {
-  const { screenRef, isOn, metadata, audioUrl, error, isLoading } = useRadio();
+  const {
+    screenRef,
+    isOn,
+    metadata,
+    audioUrl,
+    error,
+    isLoading,
+    sessionStatus,
+    transportState
+  } = useRadio();
 
-  // When the radio turns on/off or when new audio is loaded,
-  // animate the screen with a smooth transition.
   useEffect(() => {
-    // Call animateScreen with the screen reference and isOn status.
-    // It will animate "in" if isOn, or animate "out" if not.
     if (screenRef.current) {
       animateScreen(screenRef, isOn);
     }
-  }, [isOn, audioUrl, metadata, error, isLoading, screenRef]);
+  }, [isOn, audioUrl, metadata, error, isLoading, screenRef, transportState]);
 
   return (
     <div className="glass">
@@ -24,15 +30,16 @@ export default function DisplayScreen() {
         className={`radio-logo ${isOn ? 'logo-off' : 'logo-on'}`}
       />
       <div className={`screen ${isOn ? 'on' : ''}`} ref={screenRef}>
-        {isLoading && <p className="loading">Loading...</p>}
+        {isLoading && <p className="loading">{sessionStatus === 'loadingItem' ? 'Loading recording...' : 'Loading station...'}</p>}
         {error && <p className="error">{error}</p>}
         {!isLoading && audioUrl && isOn && !error && (
           <div className="now-playing">
-            <strong>Now Playing: {metadata?.title || "Untitled Recording"}</strong><br />
+            <strong>Now Playing: {metadata?.title || 'Untitled Recording'}</strong><br />
+            <small>Playback: {transportState}</small><br />
             {metadata?.contributor && <em>{metadata.contributor}</em>}<br />
             {(metadata?.date || metadata?.genre) && (
               <small>
-                {metadata.date}{metadata.date && metadata.genre ? " · " : ""}{metadata.genre}
+                {metadata.date}{metadata.date && metadata.genre ? ' · ' : ''}{metadata.genre}
               </small>
             )}<br />
             {metadata?.summary && <p>{metadata.summary}</p>}
