@@ -2,6 +2,7 @@
 import React, { useEffect } from 'react';
 import { useRadio } from '../context/RadioContext';
 import { animateScreen } from '../utils/audioUtils';
+import MetadataPanel from './MetadataPanel';
 
 export default function DisplayScreen() {
   const {
