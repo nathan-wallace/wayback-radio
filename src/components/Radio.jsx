@@ -11,7 +11,8 @@ import { RadioContext } from '../context/RadioContext';
 import {
   fetchAvailableYears,
   fetchAudioByYear,
-  fetchAudioById
+  fetchAudioById,
+  mergeCatalogYearEntry
 } from '../services/AudioService';
 import { useAudioManager } from '../hooks/useAudioManager';
 import DisplayScreen from './DisplayScreen';
@@ -20,21 +21,21 @@ import Button from './Button';
 import YearSelector from './YearSelector';
 import './Radio.css';
 
-// Initial state for the radio.
 const initialState = {
   year: 1940,
   audioUrl: null,
   volume: 0.5,
   isOn: false,
   metadata: null,
-  availableYears: [],
+  catalog: [],
+  catalogSource: null,
   itemUids: [],
   itemIndex: 0,
   isLoading: false,
+  isCatalogLoading: true,
   error: null,
 };
 
-// Reducer to centralize state updates.
 function radioReducer(state, action) {
   switch (action.type) {
     case 'SET_YEAR':
@@ -47,19 +48,22 @@ function radioReducer(state, action) {
       return { ...state, isOn: action.payload };
     case 'SET_METADATA':
       return { ...state, metadata: action.payload };
-    case 'SET_AVAILABLE_YEARS':
-      return {
-        ...state,
-        availableYears: typeof action.payload === 'function'
-          ? action.payload(state.availableYears)
-          : action.payload
-      };
+    case 'SET_CATALOG': {
+      const nextCatalog = typeof action.payload === 'function'
+        ? action.payload(state.catalog)
+        : action.payload;
+      return { ...state, catalog: nextCatalog };
+    }
+    case 'SET_CATALOG_SOURCE':
+      return { ...state, catalogSource: action.payload };
     case 'SET_ITEM_UIDS':
       return { ...state, itemUids: action.payload };
     case 'SET_ITEM_INDEX':
       return { ...state, itemIndex: action.payload };
     case 'SET_IS_LOADING':
       return { ...state, isLoading: action.payload };
+    case 'SET_IS_CATALOG_LOADING':
+      return { ...state, isCatalogLoading: action.payload };
     case 'SET_ERROR':
       return { ...state, error: action.payload };
     default:
@@ -68,14 +72,11 @@ function radioReducer(state, action) {
 }
 
 export default function Radio() {
-  // Centralize radio state.
   const [state, dispatch] = useReducer(radioReducer, initialState);
-  // Hold parsed URL parameters.
   const [initialParams, setInitialParams] = useState(null);
-  // Flag to indicate an audio override (for audioId).
   const [overrideAudio, setOverrideAudio] = useState(false);
-  // Flag to indicate that initialization has finished.
   const [initComplete, setInitComplete] = useState(false);
+  const initStartedRef = useRef(false);
 
   const {
     year,
@@ -83,40 +84,54 @@ export default function Radio() {
     volume,
     isOn,
     metadata,
-    availableYears,
+    catalog,
+    catalogSource,
     itemUids,
     itemIndex,
     isLoading,
+    isCatalogLoading,
     error
   } = state;
   const screenRef = useRef(null);
 
-  // Updater functions wrapped in useCallback.
+  const availableYears = useMemo(
+    () => catalog
+      .filter((entry) => entry.itemCount !== 0)
+      .map((entry) => entry.year),
+    [catalog]
+  );
+
+  const catalogByYear = useMemo(
+    () => new Map(catalog.map((entry) => [entry.year, entry])),
+    [catalog]
+  );
+
   const setYear = useCallback(
-    (year) => dispatch({ type: 'SET_YEAR', payload: year }),
+    (nextYear) => dispatch({ type: 'SET_YEAR', payload: nextYear }),
     []
   );
   const setAudioUrl = useCallback(
-    (audioUrl) => dispatch({ type: 'SET_AUDIO_URL', payload: audioUrl }),
+    (nextAudioUrl) => dispatch({ type: 'SET_AUDIO_URL', payload: nextAudioUrl }),
     []
   );
   const setVolume = useCallback(
-    (volume) => dispatch({ type: 'SET_VOLUME', payload: volume }),
+    (nextVolume) => dispatch({ type: 'SET_VOLUME', payload: nextVolume }),
     []
   );
   const setIsOn = useCallback(
-    (isOn) => dispatch({ type: 'SET_IS_ON', payload: isOn }),
+    (nextIsOn) => dispatch({ type: 'SET_IS_ON', payload: nextIsOn }),
     []
   );
   const setMetadata = useCallback(
-    (metadata) => dispatch({ type: 'SET_METADATA', payload: metadata }),
+    (nextMetadata) => dispatch({ type: 'SET_METADATA', payload: nextMetadata }),
     []
   );
-  const setAvailableYears = useCallback(
-    (yearsOrUpdater) => dispatch({
-      type: 'SET_AVAILABLE_YEARS',
-      payload: yearsOrUpdater
-    }),
+  const setCatalog = useCallback(
+    (entriesOrUpdater) => dispatch({ type: 'SET_CATALOG', payload: entriesOrUpdater }),
+    []
+  );
+  const setCatalogSource = useCallback(
+    (nextCatalogSource) => dispatch({ type: 'SET_CATALOG_SOURCE', payload: nextCatalogSource }),
     []
   );
   const setItemUids = useCallback(
@@ -128,13 +143,21 @@ export default function Radio() {
     []
   );
   const setIsLoading = useCallback(
-    (isLoading) => dispatch({ type: 'SET_IS_LOADING', payload: isLoading }),
+    (nextIsLoading) => dispatch({ type: 'SET_IS_LOADING', payload: nextIsLoading }),
+    []
+  );
+  const setIsCatalogLoading = useCallback(
+    (nextValue) => dispatch({ type: 'SET_IS_CATALOG_LOADING', payload: nextValue }),
     []
   );
   const setError = useCallback(
-    (error) => dispatch({ type: 'SET_ERROR', payload: error }),
+    (nextError) => dispatch({ type: 'SET_ERROR', payload: nextError }),
     []
   );
+
+  const ensureCatalogYear = useCallback((targetYear, entryPatch = {}) => {
+    setCatalog((currentCatalog) => mergeCatalogYearEntry(currentCatalog, targetYear, entryPatch));
+  }, [setCatalog]);
 
   const playItemByIndex = useCallback(async (idx) => {
     if (idx < 0 || idx >= itemUids.length) return;
@@ -151,7 +174,7 @@ export default function Radio() {
     if (itemIndex < itemUids.length - 1) {
       playItemByIndex(itemIndex + 1);
     }
-  }, [itemIndex, itemUids, playItemByIndex]);
+  }, [itemIndex, itemUids.length, playItemByIndex]);
 
   const prevItem = useCallback(() => {
     if (itemIndex > 0) {
@@ -159,121 +182,144 @@ export default function Radio() {
     }
   }, [itemIndex, playItemByIndex]);
 
-  // Use custom audio manager hook.
-  const { sound } = useAudioManager(audioUrl, isOn, volume);
+  useAudioManager(audioUrl, isOn, volume);
 
-  // Load saved volume from localStorage.
   useEffect(() => {
-    const savedVolume = localStorage.getItem("clientVolume");
+    const savedVolume = localStorage.getItem('clientVolume');
     if (savedVolume) setVolume(parseFloat(savedVolume));
   }, [setVolume]);
 
-  // Fetch available years on mount.
   useEffect(() => {
-    async function loadYears() {
-      const { years, error } = await fetchAvailableYears();
-      if (error) {
-        setError(error);
-      } else if (years) {
-        setAvailableYears(years);
+    async function loadCatalog() {
+      setIsCatalogLoading(true);
+      const catalogResult = await fetchAvailableYears();
+      setCatalog(catalogResult.entries || []);
+      setCatalogSource(catalogResult.source || null);
+      if (catalogResult.error) {
+        setError(catalogResult.error);
       }
+      setIsCatalogLoading(false);
     }
-    loadYears();
-  }, [setAvailableYears, setError]);
 
-  // Parse URL parameters on mount.
+    loadCatalog();
+  }, [setCatalog, setCatalogSource, setError, setIsCatalogLoading]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const yearParam = params.get("year");
-    const autoplayParam = params.get("autoplay");
-    const audioIdParam = params.get("audioId");
+    const yearParam = params.get('year');
+    const autoplayParam = params.get('autoplay');
+    const audioIdParam = params.get('audioId');
+    const audioTitleParam = params.get('audioTitle');
     setInitialParams({
       year: yearParam,
       autoplay: autoplayParam,
       audioId: audioIdParam,
+      audioTitle: audioTitleParam,
     });
   }, []);
 
-  // Initialization: Once initialParams and availableYears are ready, process URL parameters.
   useEffect(() => {
-    if (!initialParams || availableYears.length === 0) return;
-    
-    let initYear;
+    if (!initialParams || isCatalogLoading || initComplete || initStartedRef.current) return;
+    initStartedRef.current = true;
+
+    let initYear = availableYears[0] ?? year;
+
     if (initialParams.year) {
       const urlYear = parseInt(initialParams.year, 10);
-      if (availableYears.includes(urlYear)) {
+      if (!Number.isNaN(urlYear)) {
         initYear = urlYear;
-      } else {
-        // Add the URL-specified year if it's not in availableYears.
-        initYear = urlYear;
-        setAvailableYears(prev => {
-          const newYears = [...prev, urlYear];
-          return newYears.sort((a, b) => a - b);
-        });
-      }
-    } else {
-      initYear = availableYears[0];
-    }
 
-    // Assume initialParams may contain a parameter for audioTitle (or similar)
-  async function initAudio() {
-    if (initialParams.audioId) {
-      // If a unique audio identifier is provided, call fetchAudioById.
-      setOverrideAudio(true);
-      setIsLoading(true);
-      const result = await fetchAudioById(initialParams.audioId);
-      setAudioUrl(result.audioUrl);
-      setMetadata(result.metadata);
-      setError(result.error);
-      setItemUids([initialParams.audioId]);
-      setItemIndex(0);
-      setIsLoading(false);
-      if (result.metadata && result.metadata.date) {
-        const metadataYear = parseInt(result.metadata.date, 10);
-        if (!availableYears.includes(metadataYear)) {
-          setAvailableYears(prev => {
-            const newYears = [...prev, metadataYear];
-            return newYears.sort((a, b) => a - b);
+        if (!catalogByYear.has(urlYear)) {
+          ensureCatalogYear(urlYear, {
+            itemCount: 0,
+            sampleItemIds: [],
+            status: 'uncatalogued'
           });
         }
-        initYear = metadataYear;
       }
-    } else {
-      // If no unique identifier is specified, use an optional 'audioTitle' parameter if provided.
-      const uniqueParam = initialParams.audioTitle; // You might need to add this parameter.
-      const result = await fetchAudioByYear(initYear, uniqueParam);
-      setAudioUrl(result.audioUrl);
-      setMetadata(result.metadata);
-      setItemUids(result.itemUids || []);
-      setItemIndex(0);
-      setError(result.error);
     }
-    // Then update the year state and autoplay as needed.
-    setYear(initYear);
-    if (initialParams.autoplay && initialParams.autoplay.toLowerCase() === "true") {
-      setIsOn(true);
+
+    async function initAudio() {
+      if (initialParams.audioId) {
+        setOverrideAudio(true);
+        setIsLoading(true);
+        const result = await fetchAudioById(initialParams.audioId);
+        setAudioUrl(result.audioUrl);
+        setMetadata(result.metadata);
+        setError(result.error);
+        setItemUids([initialParams.audioId]);
+        setItemIndex(0);
+        setIsLoading(false);
+
+        if (result.metadata && result.metadata.date) {
+          const metadataYear = parseInt(result.metadata.date, 10);
+          if (!Number.isNaN(metadataYear)) {
+            const existingEntry = catalogByYear.get(metadataYear);
+            ensureCatalogYear(metadataYear, {
+              itemCount: existingEntry?.itemCount ?? Math.max(result.audioUrl ? 1 : 0, 0),
+              sampleItemIds: existingEntry?.sampleItemIds || [initialParams.audioId],
+              status: result.audioUrl ? 'ready' : 'empty'
+            });
+            initYear = metadataYear;
+          }
+        }
+      } else {
+        const result = await fetchAudioByYear(initYear, initialParams.audioTitle);
+        setAudioUrl(result.audioUrl);
+        setMetadata(result.metadata);
+        setItemUids(result.itemUids || []);
+        setItemIndex(0);
+        setError(result.error);
+
+        const existingEntry = catalogByYear.get(initYear);
+        ensureCatalogYear(initYear, {
+          itemCount: existingEntry?.itemCount ?? (result.itemUids?.length || (result.audioUrl ? 1 : 0)),
+          sampleItemIds: existingEntry?.sampleItemIds?.length
+            ? existingEntry.sampleItemIds
+            : (result.itemUids || []).slice(0, 3),
+          status: result.audioUrl ? 'ready' : 'empty'
+        });
+      }
+
+      setYear(initYear);
+      if (initialParams.autoplay && initialParams.autoplay.toLowerCase() === 'true') {
+        setIsOn(true);
+      }
+      setInitComplete(true);
     }
-    setInitComplete(true);
-  }
 
     initAudio();
   }, [
     initialParams,
+    isCatalogLoading,
+    initComplete,
     availableYears,
+    year,
+    catalogByYear,
+    ensureCatalogYear,
     setYear,
     setIsOn,
     setAudioUrl,
     setMetadata,
     setError,
     setIsLoading,
-    setAvailableYears,
     setItemUids,
     setItemIndex
   ]);
 
-  // If no override is active and initialization is complete, fetch audio by year when year changes.
   useEffect(() => {
     if (!initComplete || overrideAudio) return;
+
+    const selectedCatalogEntry = catalogByYear.get(year);
+    if (selectedCatalogEntry && selectedCatalogEntry.itemCount === 0) {
+      setAudioUrl(null);
+      setMetadata(null);
+      setItemUids(selectedCatalogEntry.sampleItemIds || []);
+      setItemIndex(0);
+      setError(`No playable recordings cataloged for ${year}.`);
+      return;
+    }
+
     (async () => {
       setIsLoading(true);
       const result = await fetchAudioByYear(year);
@@ -284,35 +330,53 @@ export default function Radio() {
       setError(result.error);
       setIsLoading(false);
 
-      // Prefetch adjacent years to speed up tuning
+      ensureCatalogYear(year, {
+        itemCount: selectedCatalogEntry?.itemCount ?? (result.itemUids?.length || (result.audioUrl ? 1 : 0)),
+        sampleItemIds: selectedCatalogEntry?.sampleItemIds?.length
+          ? selectedCatalogEntry.sampleItemIds
+          : (result.itemUids || []).slice(0, 3),
+        status: result.audioUrl ? 'ready' : 'empty'
+      });
+
       const currentIndex = availableYears.indexOf(year);
       const nextYear = availableYears[currentIndex + 1];
       if (nextYear) fetchAudioByYear(nextYear);
       const prevYear = availableYears[currentIndex - 1];
       if (prevYear) fetchAudioByYear(prevYear);
     })();
-  }, [year, availableYears, overrideAudio, initComplete, setAudioUrl, setMetadata, setError, setIsLoading, setItemUids, setItemIndex]);
+  }, [
+    year,
+    availableYears,
+    catalogByYear,
+    overrideAudio,
+    initComplete,
+    ensureCatalogYear,
+    setAudioUrl,
+    setMetadata,
+    setError,
+    setIsLoading,
+    setItemUids,
+    setItemIndex
+  ]);
 
-  // Keep the browser URL in sync with the current state.
   useEffect(() => {
     if (!initComplete) return;
     const params = new URLSearchParams(window.location.search);
-    params.set("year", year);
+    params.set('year', year);
     if (isOn) {
-      params.set("autoplay", "true");
+      params.set('autoplay', 'true');
     } else {
-      params.delete("autoplay");
+      params.delete('autoplay');
     }
     if (overrideAudio && initialParams && initialParams.audioId) {
-      params.set("audioId", initialParams.audioId);
+      params.set('audioId', initialParams.audioId);
     } else {
-      params.delete("audioId");
+      params.delete('audioId');
     }
-    const newUrl = window.location.pathname + "?" + params.toString();
+    const newUrl = window.location.pathname + '?' + params.toString();
     window.history.replaceState({}, '', newUrl);
   }, [year, isOn, overrideAudio, initialParams, initComplete]);
 
-  // Memoize the context value.
   const contextValue = useMemo(
     () => ({
       year,
@@ -325,13 +389,16 @@ export default function Radio() {
       setIsOn,
       metadata,
       setMetadata,
+      catalog,
+      catalogSource,
       availableYears,
-      setAvailableYears,
+      setCatalog,
       itemUids,
       itemIndex,
       nextItem,
       prevItem,
       isLoading,
+      isCatalogLoading,
       setIsLoading,
       error,
       setError,
@@ -343,17 +410,20 @@ export default function Radio() {
       volume,
       isOn,
       metadata,
+      catalog,
+      catalogSource,
       availableYears,
       itemUids,
       itemIndex,
       isLoading,
+      isCatalogLoading,
       error,
       setYear,
       setAudioUrl,
       setVolume,
       setIsOn,
       setMetadata,
-      setAvailableYears,
+      setCatalog,
       nextItem,
       prevItem,
       setIsLoading,
@@ -361,8 +431,6 @@ export default function Radio() {
     ]
   );
 
-  // Instead of an early return (which causes hook order changes),
-  // always call all hooks and then conditionally render the UI.
   return (
     !initComplete ? (
       <div className="radio-loading">Loading…</div>

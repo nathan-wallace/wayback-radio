@@ -3,7 +3,7 @@ import { useRadio } from '../context/RadioContext';
 import { loadGsap } from '../utils/gsapLoader';
 
 export default function YearSelector() {
-  const { year, setYear, availableYears } = useRadio();
+  const { year, setYear, catalog, availableYears, isCatalogLoading } = useRadio();
   const containerRef = useRef(null);
   const yearRef = useRef(year);
 
@@ -22,7 +22,7 @@ export default function YearSelector() {
       clearTimeout(scrollTimeout);
       scrollTimeout = setTimeout(() => {
         const center = container.scrollLeft + container.clientWidth / 2;
-        const years = container.querySelectorAll('.year');
+        const years = container.querySelectorAll('.year:not(.year-disabled)');
         let closest = null;
         let minDiff = Infinity;
 
@@ -59,7 +59,7 @@ export default function YearSelector() {
       container.removeEventListener('scroll', handleScroll);
       if (dragInstance) dragInstance.kill();
     };
-  }, [availableYears, setYear]);
+  }, [catalog, setYear]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -71,15 +71,42 @@ export default function YearSelector() {
         activeEl.offsetLeft - container.clientWidth / 2 + activeEl.offsetWidth / 2;
       container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
     }
-  }, [year]);
+  }, [year, catalog]);
 
   return (
     <div className="year-indicator-wrapper" style={{ position: 'relative' }}>
       <div className="year-indicator" ref={containerRef}>
         <div className="years">
-          {availableYears.map((y) => (
-            <span key={y} className={`year ${y === year ? 'active' : ''}`} onClick={() => setYear(y)}>
-              {y}
+          {catalog.map((entry) => {
+            const isDisabled = entry.itemCount === 0;
+            const isLoadingEntry = entry.itemCount == null || isCatalogLoading;
+            const title = isDisabled
+              ? `${entry.year}: no playable recordings cataloged`
+              : `${entry.year}: ${entry.itemCount ?? '…'} playable recordings`;
+
+            return (
+              <span
+                key={entry.year}
+                className={`year ${entry.year === year ? 'active' : ''} ${isDisabled ? 'year-disabled' : ''} ${isLoadingEntry ? 'year-loading' : ''}`}
+                onClick={() => {
+                  if (!isDisabled) {
+                    setYear(entry.year);
+                  }
+                }}
+                style={{
+                  opacity: isDisabled ? 0.45 : 1,
+                  cursor: isDisabled ? 'not-allowed' : 'pointer'
+                }}
+                title={title}
+                aria-disabled={isDisabled}
+              >
+                {entry.year}
+              </span>
+            );
+          })}
+          {!catalog.length && availableYears.map((availableYear) => (
+            <span key={availableYear} className={`year ${availableYear === year ? 'active' : ''}`}>
+              {availableYear}
             </span>
           ))}
         </div>
