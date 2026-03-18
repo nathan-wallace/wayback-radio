@@ -12,7 +12,14 @@ function getYearDescription(option) {
 }
 
 export default function YearSelector() {
-  const { year, setYear, catalog, availableYears, isCatalogLoading } = useRadio();
+  const {
+    year,
+    setYear,
+    catalog,
+    availableYears,
+    availableYearOptions = [],
+    isCatalogLoading
+  } = useRadio();
   const containerRef = useRef(null);
   const buttonRefs = useRef([]);
   const yearRef = useRef(year);
@@ -42,6 +49,7 @@ export default function YearSelector() {
     if (!container || yearOptions.length === 0) return undefined;
 
     let dragInstance;
+    let scrollTimeout;
 
     const handleScroll = () => {
       clearTimeout(scrollTimeout);
@@ -61,7 +69,7 @@ export default function YearSelector() {
         });
 
         if (closest) {
-          const newYear = Number.parseInt(closest.textContent, 10);
+          const newYear = Number.parseInt(closest.getAttribute('data-year'), 10);
           if (newYear !== yearRef.current) {
             setYear(newYear);
           }
@@ -79,9 +87,11 @@ export default function YearSelector() {
     });
 
     return () => {
+      clearTimeout(scrollTimeout);
+      container.removeEventListener('scroll', handleScroll);
       if (dragInstance) dragInstance.kill();
     };
-  }, [catalog, setYear]);
+  }, [yearOptions, setYear]);
 
   useEffect(() => {
     const selectedIndex = yearOptions.findIndex((option) => option.value === year);
@@ -95,7 +105,7 @@ export default function YearSelector() {
         inline: 'center'
       });
     }
-  }, [year, catalog]);
+  }, [year, yearOptions]);
 
   return (
     <div className="year-indicator-wrapper" style={{ position: 'relative' }}>
@@ -123,20 +133,24 @@ export default function YearSelector() {
         aria-activedescendant={`year-option-${year}`}
       >
         <div className="years">
-          {catalog.map((entry) => {
-            const isDisabled = entry.itemCount === 0;
-            const isLoadingEntry = entry.itemCount == null || isCatalogLoading;
-            const title = isDisabled
-              ? `${entry.year}: no playable recordings cataloged`
-              : `${entry.year}: ${entry.itemCount ?? '…'} playable recordings`;
+          {yearOptions.map((option, index) => {
+            const catalogEntry = catalog.find((entry) => entry.year === option.value);
+            const isDisabled = !option.hasRecordings;
+            const isLoadingEntry = catalogEntry?.itemCount == null || isCatalogLoading;
+            const title = `${option.value}: ${getYearDescription(option)}`;
 
             return (
               <span
-                key={entry.year}
-                className={`year ${entry.year === year ? 'active' : ''} ${isDisabled ? 'year-disabled' : ''} ${isLoadingEntry ? 'year-loading' : ''}`}
+                key={option.value}
+                id={`year-option-${option.value}`}
+                ref={(node) => {
+                  buttonRefs.current[index] = node;
+                }}
+                className={`year ${option.value === year ? 'active' : ''} ${isDisabled ? 'year-disabled' : ''} ${isLoadingEntry ? 'year-loading' : ''}`}
+                data-year={option.value}
                 onClick={() => {
                   if (!isDisabled) {
-                    setYear(entry.year);
+                    setYear(option.value);
                   }
                 }}
                 style={{
@@ -144,17 +158,14 @@ export default function YearSelector() {
                   cursor: isDisabled ? 'not-allowed' : 'pointer'
                 }}
                 title={title}
+                role="option"
+                aria-selected={option.value === year}
                 aria-disabled={isDisabled}
               >
-                {entry.year}
+                {option.value}
               </span>
             );
           })}
-          {!catalog.length && availableYears.map((availableYear) => (
-            <span key={availableYear} className={`year ${availableYear === year ? 'active' : ''}`}>
-              {availableYear}
-            </span>
-          ))}
         </div>
       </div>
       <div className="indicator" aria-hidden="true"></div>

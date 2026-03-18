@@ -120,13 +120,6 @@ function buildCatalogPayload(entries, meta = {}) {
 }
 
 function buildMetadata(itemData, selectedItem, fallbackYear) {
-  return {
-    src,
-    alt: title ? `${title} cover` : 'Recording cover',
-  };
-}
-
-function buildMetadata(itemData, selectedItem, fallbackYear) {
   const title = normalizeText(itemData.title || itemData.item?.title) || 'Untitled Recording';
   const date = normalizeText(itemData.date || itemData.item?.date || fallbackYear?.toString());
   const url = normalizeText(itemData.url || selectedItem?.url);
