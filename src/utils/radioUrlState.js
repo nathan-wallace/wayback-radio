@@ -18,7 +18,16 @@ function normalizeItemId(value) {
     return null;
   }
 
-  return value.trim() || null;
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(trimmed);
+  } catch (error) {
+    return trimmed;
+  }
 }
 
 export function parseRadioUrlState(search = window.location.search) {
@@ -26,7 +35,11 @@ export function parseRadioUrlState(search = window.location.search) {
 
   return {
     year: normalizeYear(params.get('year')),
-    itemId: normalizeItemId(params.get('itemId') || params.get('audioId')),
+    itemId: normalizeItemId(
+      params.get('itemId')
+      || params.get('audioId')
+      || params.get('audioTitle')
+    ),
     autoplay: params.get('autoplay')?.toLowerCase() === 'true'
   };
 }

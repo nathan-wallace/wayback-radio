@@ -5,6 +5,7 @@ import {
   fetchAudioById,
   mergeCatalogYearEntry
 } from '../services/AudioService';
+import { parseRadioUrlState, serializeRadioUrlState } from '../utils/radioUrlState';
 
 const initialState = {
   year: 1940,
@@ -18,6 +19,7 @@ const initialState = {
   catalogGeneratedAt: null,
   itemUids: [],
   itemIndex: 0,
+  currentItemId: null,
   sessionStatus: 'booting',
   error: null,
 };
@@ -60,12 +62,14 @@ function radioReducer(state, action) {
       return { ...state, itemUids: action.payload };
     case 'SET_ITEM_INDEX':
       return { ...state, itemIndex: action.payload };
+    case 'SET_CURRENT_ITEM_ID':
+      return { ...state, currentItemId: action.payload };
     case 'SET_SESSION_STATUS':
       return { ...state, sessionStatus: action.payload };
     case 'SET_ERROR':
       return { ...state, error: action.payload };
     case 'APPLY_AUDIO_RESULT': {
-      const { audioUrl, metadata, error, itemUids, itemIndex, sessionStatus } = action.payload;
+      const { audioUrl, metadata, error, itemUids, itemIndex, itemId, sessionStatus } = action.payload;
       return {
         ...state,
         audioUrl,
@@ -73,6 +77,7 @@ function radioReducer(state, action) {
         error,
         itemUids: itemUids ?? state.itemUids,
         itemIndex: itemIndex ?? state.itemIndex,
+        currentItemId: itemId ?? state.currentItemId,
         sessionStatus,
       };
     }
@@ -82,13 +87,11 @@ function radioReducer(state, action) {
 }
 
 function parseInitialParams() {
-  const params = new URLSearchParams(window.location.search);
-  return {
-    year: params.get('year'),
-    autoplay: params.get('autoplay'),
-    audioId: params.get('audioId'),
-    audioTitle: params.get('audioTitle'),
-  };
+  return parseRadioUrlState(window.location.search);
+}
+
+function buildEmptyMessage(error) {
+  return error || 'No Library of Congress recordings are currently available.';
 }
 
 export function useRadioController() {
@@ -114,6 +117,7 @@ export function useRadioController() {
     catalogGeneratedAt,
     itemUids,
     itemIndex,
+    currentItemId,
     sessionStatus,
     error
   } = state;
@@ -145,6 +149,7 @@ export function useRadioController() {
         error: result.error,
         itemUids: updates.itemUids,
         itemIndex: updates.itemIndex,
+        itemId: updates.itemId ?? result.itemId ?? result.metadata?.uid ?? null,
         sessionStatus: result.error ? 'error' : 'ready'
       }
     });
@@ -177,11 +182,15 @@ export function useRadioController() {
     }
   }, []);
 
-  const loadYearAudio = useCallback(async (targetYear, encodedTitle = null) => (
-    withLatestSelection('loadingYear', () => fetchAudioByYear(targetYear, encodedTitle), (result) => {
+  const loadYearAudio = useCallback(async (targetYear, itemId = null) => (
+    withLatestSelection('loadingYear', () => fetchAudioByYear(targetYear, itemId), (result) => {
+      const selectedItemId = result.itemId || itemId || result.metadata?.uid || null;
+      const itemUidIndex = selectedItemId ? result.itemUids?.indexOf(selectedItemId) : -1;
+
       applyAudioResult(result, {
         itemUids: result.itemUids || [],
-        itemIndex: 0
+        itemIndex: itemUidIndex >= 0 ? itemUidIndex : 0,
+        itemId: selectedItemId
       });
       prefetchAdjacentYears(targetYear, availableYears);
     })
@@ -191,7 +200,8 @@ export function useRadioController() {
     withLatestSelection('loadingItem', () => fetchAudioById(audioId), (result) => {
       applyAudioResult(result, {
         itemUids: [audioId],
-        itemIndex: 0
+        itemIndex: 0,
+        itemId: result.itemId || audioId
       });
       if (targetYear != null) {
         dispatch({ type: 'SET_YEAR', payload: targetYear });
@@ -204,12 +214,15 @@ export function useRadioController() {
       return;
     }
 
-    await withLatestSelection('loadingItem', () => fetchAudioById(itemUids[idx]), (result) => {
+    const targetItemId = itemUids[idx];
+    await withLatestSelection('loadingItem', () => fetchAudioById(targetItemId), (result) => {
       applyAudioResult(result, {
         itemUids: [...itemUids],
-        itemIndex: idx
+        itemIndex: idx,
+        itemId: result.itemId || targetItemId
       });
     });
+    setOverrideAudio(true);
   }, [applyAudioResult, itemUids, withLatestSelection]);
 
   const nextItem = useCallback(() => {
@@ -246,17 +259,23 @@ export function useRadioController() {
         return;
       }
 
+      setCatalog({ entries, source, generatedAt });
+
       if (yearsError) {
         setError(yearsError);
       }
 
-      setCatalog({ entries, source, generatedAt });
-
       if (years?.length) {
         setAvailableYears(years);
-      } else if (yearsError) {
-        setSessionStatus('error');
+        return;
       }
+
+      setError(buildEmptyMessage(yearsError));
+      dispatch({ type: 'SET_YEAR', payload: null });
+      dispatch({ type: 'SET_CURRENT_ITEM_ID', payload: null });
+      setSessionStatus(yearsError ? 'error' : 'empty');
+      setInitComplete(true);
+      initHandledRef.current = true;
     }
 
     loadYears();
@@ -270,51 +289,54 @@ export function useRadioController() {
     initHandledRef.current = true;
 
     async function initialize() {
-      let initYear;
-      if (initialParams.year) {
-        const urlYear = Number.parseInt(initialParams.year, 10);
-        if (Number.isFinite(urlYear)) {
-          initYear = urlYear;
-          if (!availableYears.includes(urlYear)) {
-            setAvailableYears((prev) => [...prev, urlYear].sort((a, b) => a - b));
-            setCatalog((prev) => ({
-              entries: mergeCatalogYearEntry(prev?.entries, urlYear, { itemCount: null, status: 'manifest' }),
-              source: prev?.source || null,
-              generatedAt: prev?.generatedAt || null
-            }));
-          }
-        }
+      let initYear = initialParams.year;
+      if (initYear != null && !availableYears.includes(initYear)) {
+        setAvailableYears((prev) => [...prev, initYear].sort((a, b) => a - b));
+        setCatalog((prev) => ({
+          entries: mergeCatalogYearEntry(prev?.entries, initYear, { itemCount: null, status: 'manifest' }),
+          source: prev?.source || null,
+          generatedAt: prev?.generatedAt || null
+        }));
       }
 
       if (initYear == null) {
         initYear = availableYears[0];
       }
 
-      if (initialParams.audioId) {
+      if (initialParams.itemId) {
         setOverrideAudio(true);
-        const result = await loadAudioById(initialParams.audioId, initYear);
+        const numericItemId = Number.parseInt(initialParams.itemId, 10);
+        const isUidOnly = Number.isFinite(numericItemId) && String(numericItemId) === String(initialParams.itemId);
 
-        if (result?.metadata?.date) {
-          const metadataYear = Number.parseInt(result.metadata.date, 10);
-          if (Number.isFinite(metadataYear)) {
-            if (!availableYears.includes(metadataYear)) {
-              setAvailableYears((prev) => [...prev, metadataYear].sort((a, b) => a - b));
-              setCatalog((prev) => ({
-                entries: mergeCatalogYearEntry(prev?.entries, metadataYear, { itemCount: null, status: 'manifest' }),
-                source: prev?.source || null,
-                generatedAt: prev?.generatedAt || null
-              }));
+        if (isUidOnly) {
+          const result = await loadAudioById(initialParams.itemId, initYear);
+
+          if (result?.metadata?.date) {
+            const metadataYear = Number.parseInt(result.metadata.date, 10);
+            if (Number.isFinite(metadataYear)) {
+              if (!availableYears.includes(metadataYear)) {
+                setAvailableYears((prev) => [...prev, metadataYear].sort((a, b) => a - b));
+                setCatalog((prev) => ({
+                  entries: mergeCatalogYearEntry(prev?.entries, metadataYear, { itemCount: null, status: 'manifest' }),
+                  source: prev?.source || null,
+                  generatedAt: prev?.generatedAt || null
+                }));
+              }
+              dispatch({ type: 'SET_YEAR', payload: metadataYear });
             }
-            dispatch({ type: 'SET_YEAR', payload: metadataYear });
           }
+        } else {
+          dispatch({ type: 'SET_YEAR', payload: initYear });
+          skipNextYearLoadRef.current = true;
+          await loadYearAudio(initYear, initialParams.itemId);
         }
       } else {
         dispatch({ type: 'SET_YEAR', payload: initYear });
         skipNextYearLoadRef.current = true;
-        await loadYearAudio(initYear, initialParams.audioTitle);
+        await loadYearAudio(initYear);
       }
 
-      if (initialParams.autoplay?.toLowerCase() === 'true') {
+      if (initialParams.autoplay) {
         setIsOn(true);
       }
       setInitComplete(true);
@@ -332,7 +354,7 @@ export function useRadioController() {
   ]);
 
   useEffect(() => {
-    if (!initComplete || overrideAudio) {
+    if (!initComplete || overrideAudio || sessionStatus === 'empty') {
       return;
     }
 
@@ -342,31 +364,21 @@ export function useRadioController() {
     }
 
     loadYearAudio(year);
-  }, [year, initComplete, loadYearAudio, overrideAudio]);
+  }, [year, initComplete, loadYearAudio, overrideAudio, sessionStatus]);
 
   useEffect(() => {
     if (!initComplete) {
       return;
     }
 
-    const params = new URLSearchParams(window.location.search);
-    params.set('year', year);
+    const nextUrl = serializeRadioUrlState({
+      year,
+      autoplay: isOn,
+      itemId: currentItemId || null
+    });
 
-    if (isOn) {
-      params.set('autoplay', 'true');
-    } else {
-      params.delete('autoplay');
-    }
-
-    if (overrideAudio && initialParams.audioId) {
-      params.set('audioId', initialParams.audioId);
-    } else {
-      params.delete('audioId');
-    }
-
-    const newUrl = `${window.location.pathname}?${params.toString()}`;
-    window.history.replaceState({}, '', newUrl);
-  }, [year, isOn, overrideAudio, initialParams, initComplete]);
+    window.history.replaceState({}, '', nextUrl);
+  }, [currentItemId, initComplete, isOn, year]);
 
   const controller = useMemo(() => ({
     year,
@@ -388,6 +400,7 @@ export function useRadioController() {
     setItemUids,
     itemIndex,
     setItemIndex,
+    currentItemId,
     nextItem,
     prevItem,
     playItemByIndex,
@@ -405,6 +418,7 @@ export function useRadioController() {
     catalogEntries,
     catalogGeneratedAt,
     catalogSource,
+    currentItemId,
     error,
     initComplete,
     isOn,
