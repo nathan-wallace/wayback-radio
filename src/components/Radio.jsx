@@ -14,6 +14,10 @@ import {
   fetchAudioById
 } from '../services/AudioService';
 import { useAudioManager } from '../hooks/useAudioManager';
+import {
+  parseRadioUrlState,
+  serializeRadioUrlState
+} from '../utils/radioUrlState';
 import DisplayScreen from './DisplayScreen';
 import ItemNavigator from './ItemNavigator';
 import Button from './Button';
@@ -33,6 +37,32 @@ const initialState = {
   isLoading: false,
   error: null,
 };
+
+function resolveValidYear(requestedYear, availableYears) {
+  if (requestedYear == null) {
+    return availableYears[0];
+  }
+
+  if (availableYears.includes(requestedYear)) {
+    return requestedYear;
+  }
+
+  return requestedYear;
+}
+
+function ensureYearPresent(year, availableYears, setAvailableYears) {
+  if (year == null || availableYears.includes(year)) {
+    return;
+  }
+
+  setAvailableYears((prev) => {
+    if (prev.includes(year)) {
+      return prev;
+    }
+
+    return [...prev, year].sort((a, b) => a - b);
+  });
+}
 
 // Reducer to centralize state updates.
 function radioReducer(state, action) {
@@ -70,12 +100,11 @@ function radioReducer(state, action) {
 export default function Radio() {
   // Centralize radio state.
   const [state, dispatch] = useReducer(radioReducer, initialState);
-  // Hold parsed URL parameters.
-  const [initialParams, setInitialParams] = useState(null);
-  // Flag to indicate an audio override (for audioId).
-  const [overrideAudio, setOverrideAudio] = useState(false);
+  const [initialRouteState] = useState(() => parseRadioUrlState());
   // Flag to indicate that initialization has finished.
   const [initComplete, setInitComplete] = useState(false);
+  const initStartedRef = useRef(false);
+  const skipNextYearFetchRef = useRef(false);
 
   const {
     year,
@@ -90,6 +119,9 @@ export default function Radio() {
     error
   } = state;
   const screenRef = useRef(null);
+
+  const selectedItemId = metadata?.uid || null;
+  const hasExplicitInitialItem = Boolean(initialRouteState.itemId);
 
   // Updater functions wrapped in useCallback.
   const setYear = useCallback(
@@ -160,11 +192,11 @@ export default function Radio() {
   }, [itemIndex, playItemByIndex]);
 
   // Use custom audio manager hook.
-  const { sound } = useAudioManager(audioUrl, isOn, volume);
+  useAudioManager(audioUrl, isOn, volume);
 
   // Load saved volume from localStorage.
   useEffect(() => {
-    const savedVolume = localStorage.getItem("clientVolume");
+    const savedVolume = localStorage.getItem('clientVolume');
     if (savedVolume) setVolume(parseFloat(savedVolume));
   }, [setVolume]);
 
@@ -181,99 +213,99 @@ export default function Radio() {
     loadYears();
   }, [setAvailableYears, setError]);
 
-  // Parse URL parameters on mount.
+  // Initialization: once available years are ready, process the normalized route state.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const yearParam = params.get("year");
-    const autoplayParam = params.get("autoplay");
-    const audioIdParam = params.get("audioId");
-    setInitialParams({
-      year: yearParam,
-      autoplay: autoplayParam,
-      audioId: audioIdParam,
-    });
-  }, []);
+    if (availableYears.length === 0 || initComplete || initStartedRef.current) return;
 
-  // Initialization: Once initialParams and availableYears are ready, process URL parameters.
-  useEffect(() => {
-    if (!initialParams || availableYears.length === 0) return;
-    
-    let initYear;
-    if (initialParams.year) {
-      const urlYear = parseInt(initialParams.year, 10);
-      if (availableYears.includes(urlYear)) {
-        initYear = urlYear;
-      } else {
-        // Add the URL-specified year if it's not in availableYears.
-        initYear = urlYear;
-        setAvailableYears(prev => {
-          const newYears = [...prev, urlYear];
-          return newYears.sort((a, b) => a - b);
-        });
-      }
-    } else {
-      initYear = availableYears[0];
-    }
+    initStartedRef.current = true;
 
-    // Assume initialParams may contain a parameter for audioTitle (or similar)
-  async function initAudio() {
-    if (initialParams.audioId) {
-      // If a unique audio identifier is provided, call fetchAudioById.
-      setOverrideAudio(true);
+    async function initializeFromRoute() {
+      let nextYear = resolveValidYear(initialRouteState.year, availableYears);
+      let initialItemId = initialRouteState.itemId;
+
+      ensureYearPresent(nextYear, availableYears, setAvailableYears);
       setIsLoading(true);
-      const result = await fetchAudioById(initialParams.audioId);
-      setAudioUrl(result.audioUrl);
-      setMetadata(result.metadata);
-      setError(result.error);
-      setItemUids([initialParams.audioId]);
-      setItemIndex(0);
-      setIsLoading(false);
-      if (result.metadata && result.metadata.date) {
-        const metadataYear = parseInt(result.metadata.date, 10);
-        if (!availableYears.includes(metadataYear)) {
-          setAvailableYears(prev => {
-            const newYears = [...prev, metadataYear];
-            return newYears.sort((a, b) => a - b);
-          });
-        }
-        initYear = metadataYear;
-      }
-    } else {
-      // If no unique identifier is specified, use an optional 'audioTitle' parameter if provided.
-      const uniqueParam = initialParams.audioTitle; // You might need to add this parameter.
-      const result = await fetchAudioByYear(initYear, uniqueParam);
-      setAudioUrl(result.audioUrl);
-      setMetadata(result.metadata);
-      setItemUids(result.itemUids || []);
-      setItemIndex(0);
-      setError(result.error);
-    }
-    // Then update the year state and autoplay as needed.
-    setYear(initYear);
-    if (initialParams.autoplay && initialParams.autoplay.toLowerCase() === "true") {
-      setIsOn(true);
-    }
-    setInitComplete(true);
-  }
 
-    initAudio();
+      if (initialItemId) {
+        const result = await fetchAudioById(initialItemId);
+
+        setAudioUrl(result.audioUrl);
+        setMetadata(result.metadata);
+        setError(result.error);
+
+        if (result.metadata?.date) {
+          const metadataYear = Number.parseInt(result.metadata.date, 10);
+          if (!Number.isNaN(metadataYear)) {
+            nextYear = metadataYear;
+            ensureYearPresent(metadataYear, availableYears, setAvailableYears);
+          }
+        }
+
+        const yearResult = await fetchAudioByYear(nextYear);
+        const initialItemUids = yearResult.itemUids || [];
+        const matchedIndex = initialItemUids.indexOf(initialItemId);
+
+        setItemUids(initialItemUids);
+        setItemIndex(matchedIndex >= 0 ? matchedIndex : 0);
+      } else {
+        const result = await fetchAudioByYear(nextYear);
+        const initialItemUids = result.itemUids || [];
+
+        setAudioUrl(result.audioUrl);
+        setMetadata(result.metadata);
+        setItemUids(initialItemUids);
+        setError(result.error);
+
+        const matchedIndex = initialItemId
+          ? initialItemUids.indexOf(initialItemId)
+          : 0;
+
+        setItemIndex(matchedIndex >= 0 ? matchedIndex : 0);
+      }
+
+      skipNextYearFetchRef.current = true;
+      setYear(nextYear);
+      setIsLoading(false);
+
+      if (initialRouteState.autoplay) {
+        setIsOn(true);
+      }
+
+      setInitComplete(true);
+    }
+
+    initializeFromRoute();
   }, [
-    initialParams,
     availableYears,
-    setYear,
-    setIsOn,
+    initComplete,
+    initialRouteState,
     setAudioUrl,
-    setMetadata,
+    setAvailableYears,
     setError,
     setIsLoading,
-    setAvailableYears,
+    setIsOn,
+    setItemIndex,
     setItemUids,
-    setItemIndex
+    setMetadata,
+    setYear
   ]);
 
-  // If no override is active and initialization is complete, fetch audio by year when year changes.
+  // When a year is selected after initialization, load the default recording for that year.
   useEffect(() => {
-    if (!initComplete || overrideAudio) return;
+    if (!initComplete) return;
+
+    if (skipNextYearFetchRef.current) {
+      skipNextYearFetchRef.current = false;
+      return;
+    }
+
+    if (hasExplicitInitialItem && selectedItemId && metadata?.date) {
+      const metadataYear = Number.parseInt(metadata.date, 10);
+      if (!Number.isNaN(metadataYear) && metadataYear === year) {
+        return;
+      }
+    }
+
     (async () => {
       setIsLoading(true);
       const result = await fetchAudioByYear(year);
@@ -291,26 +323,33 @@ export default function Radio() {
       const prevYear = availableYears[currentIndex - 1];
       if (prevYear) fetchAudioByYear(prevYear);
     })();
-  }, [year, availableYears, overrideAudio, initComplete, setAudioUrl, setMetadata, setError, setIsLoading, setItemUids, setItemIndex]);
+  }, [
+    year,
+    availableYears,
+    hasExplicitInitialItem,
+    initComplete,
+    metadata,
+    selectedItemId,
+    setAudioUrl,
+    setMetadata,
+    setError,
+    setIsLoading,
+    setItemUids,
+    setItemIndex
+  ]);
 
   // Keep the browser URL in sync with the current state.
   useEffect(() => {
     if (!initComplete) return;
-    const params = new URLSearchParams(window.location.search);
-    params.set("year", year);
-    if (isOn) {
-      params.set("autoplay", "true");
-    } else {
-      params.delete("autoplay");
-    }
-    if (overrideAudio && initialParams && initialParams.audioId) {
-      params.set("audioId", initialParams.audioId);
-    } else {
-      params.delete("audioId");
-    }
-    const newUrl = window.location.pathname + "?" + params.toString();
+
+    const newUrl = serializeRadioUrlState({
+      year,
+      itemId: selectedItemId,
+      autoplay: isOn
+    });
+
     window.history.replaceState({}, '', newUrl);
-  }, [year, isOn, overrideAudio, initialParams, initComplete]);
+  }, [year, isOn, selectedItemId, initComplete]);
 
   // Memoize the context value.
   const contextValue = useMemo(
@@ -335,7 +374,7 @@ export default function Radio() {
       setIsLoading,
       error,
       setError,
-      screenRef,
+      screenRef
     }),
     [
       year,
