@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -90,6 +90,15 @@ async function fetchJson(url) {
   }
 
   return response.json();
+}
+
+async function readExistingCache() {
+  try {
+    const fileContents = await readFile(outputPath, 'utf8');
+    return JSON.parse(fileContents);
+  } catch (error) {
+    return null;
+  }
 }
 
 async function fetchCatalogWithSamples() {
@@ -185,7 +194,15 @@ async function main() {
   console.log(`Wrote ${outputPath}`);
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
+  const existingCache = await readExistingCache();
+
+  if (existingCache) {
+    console.warn('Failed to refresh archive cache; keeping the existing static cache file.');
+    console.warn(error);
+    return;
+  }
+
   console.error(error);
   process.exitCode = 1;
 });
