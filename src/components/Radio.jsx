@@ -48,7 +48,12 @@ function radioReducer(state, action) {
     case 'SET_METADATA':
       return { ...state, metadata: action.payload };
     case 'SET_AVAILABLE_YEARS':
-      return { ...state, availableYears: action.payload };
+      return {
+        ...state,
+        availableYears: typeof action.payload === 'function'
+          ? action.payload(state.availableYears)
+          : action.payload
+      };
     case 'SET_ITEM_UIDS':
       return { ...state, itemUids: action.payload };
     case 'SET_ITEM_INDEX':
@@ -108,7 +113,10 @@ export default function Radio() {
     []
   );
   const setAvailableYears = useCallback(
-    (years) => dispatch({ type: 'SET_AVAILABLE_YEARS', payload: years }),
+    (yearsOrUpdater) => dispatch({
+      type: 'SET_AVAILABLE_YEARS',
+      payload: yearsOrUpdater
+    }),
     []
   );
   const setItemUids = useCallback(

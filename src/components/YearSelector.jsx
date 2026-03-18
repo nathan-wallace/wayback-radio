@@ -5,12 +5,19 @@ import { loadGsap } from '../utils/gsapLoader';
 export default function YearSelector() {
   const { year, setYear, availableYears } = useRadio();
   const containerRef = useRef(null);
+  const yearRef = useRef(year);
+
+  useEffect(() => {
+    yearRef.current = year;
+  }, [year]);
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container) return undefined;
 
     let scrollTimeout;
+    let dragInstance;
+
     const handleScroll = () => {
       clearTimeout(scrollTimeout);
       scrollTimeout = setTimeout(() => {
@@ -29,16 +36,15 @@ export default function YearSelector() {
         });
 
         if (closest) {
-          const newYear = parseInt(closest.textContent);
-          if (newYear !== year) {
+          const newYear = Number.parseInt(closest.textContent, 10);
+          if (newYear !== yearRef.current) {
             setYear(newYear);
           }
         }
-      }, 50); // Reduced debounce delay for tighter sync
+      }, 50);
     };
 
     container.addEventListener('scroll', handleScroll);
-    let dragInstance;
     loadGsap().then(({ Draggable }) => {
       dragInstance = Draggable.create(container, {
         type: 'scrollLeft',
@@ -49,25 +55,22 @@ export default function YearSelector() {
     });
 
     return () => {
+      clearTimeout(scrollTimeout);
       container.removeEventListener('scroll', handleScroll);
       if (dragInstance) dragInstance.kill();
     };
-  }, [year, availableYears]);
+  }, [availableYears, setYear]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const scrollToActive = () => {
-      const activeEl = container.querySelector('.year.active');
-      if (activeEl) {
-        const scrollLeft =
-          activeEl.offsetLeft - container.clientWidth / 2 + activeEl.offsetWidth / 2;
-        container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
-      }
-    };
-
-    scrollToActive();
+    const activeEl = container.querySelector('.year.active');
+    if (activeEl) {
+      const scrollLeft =
+        activeEl.offsetLeft - container.clientWidth / 2 + activeEl.offsetWidth / 2;
+      container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+    }
   }, [year]);
 
   return (
