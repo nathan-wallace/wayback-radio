@@ -42,7 +42,6 @@ export default function VolumeKnob() {
       <div className="knob-wrapper">
         <div className="knob volume-knob" ref={knobRef}></div>
       </div>
-      <div className="knob-label">Volume</div>
     </div>
   );
 }

@@ -1,4 +1,3 @@
-// Radio.jsx
 import React, {
   useReducer,
   useEffect,
@@ -14,13 +13,38 @@ import {
   fetchAudioById
 } from '../services/AudioService';
 import { useAudioManager } from '../hooks/useAudioManager';
+import { radioLayout } from '../config/radioLayout';
 import DisplayScreen from './DisplayScreen';
 import ItemNavigator from './ItemNavigator';
 import Button from './Button';
 import YearSelector from './YearSelector';
+import TuningKnob from './TuningKnob';
+import VolumeKnob from './VolumeKnob';
 import './Radio.css';
 
-// Initial state for the radio.
+const componentRegistry = {
+  Button,
+  ItemNavigator,
+  TuningKnob,
+  VolumeKnob,
+  YearSelector
+};
+
+const layoutSlots = ['timeline', 'controls'];
+
+const groupedRadioLayout = layoutSlots.reduce((groups, slot) => {
+  groups[slot] = radioLayout
+    .filter((entry) => entry.enabled && entry.slot === slot)
+    .sort((a, b) => a.order - b.order);
+
+  return groups;
+}, {});
+
+const getResponsiveClasses = (responsive = {}) => [
+  responsive.mobile ? `control--mobile-${responsive.mobile}` : null,
+  responsive.desktop ? `control--desktop-${responsive.desktop}` : null
+].filter(Boolean).join(' ');
+
 const initialState = {
   year: 1940,
   audioUrl: null,
@@ -34,7 +58,6 @@ const initialState = {
   error: null,
 };
 
-// Reducer to centralize state updates.
 function radioReducer(state, action) {
   switch (action.type) {
     case 'SET_YEAR':
@@ -67,14 +90,33 @@ function radioReducer(state, action) {
   }
 }
 
+function renderControl(entry) {
+  const Component = componentRegistry[entry.component];
+
+  if (!Component) {
+    return null;
+  }
+
+  return (
+    <div
+      key={entry.id}
+      className={[
+        'radio-control',
+        `radio-control--${entry.id}`,
+        getResponsiveClasses(entry.responsive)
+      ].filter(Boolean).join(' ')}
+      data-control-id={entry.id}
+    >
+      <Component />
+      {entry.label ? <div className="control-label">{entry.label}</div> : null}
+    </div>
+  );
+}
+
 export default function Radio() {
-  // Centralize radio state.
   const [state, dispatch] = useReducer(radioReducer, initialState);
-  // Hold parsed URL parameters.
   const [initialParams, setInitialParams] = useState(null);
-  // Flag to indicate an audio override (for audioId).
   const [overrideAudio, setOverrideAudio] = useState(false);
-  // Flag to indicate that initialization has finished.
   const [initComplete, setInitComplete] = useState(false);
 
   const {
@@ -91,53 +133,50 @@ export default function Radio() {
   } = state;
   const screenRef = useRef(null);
 
-  // Updater functions wrapped in useCallback.
   const setYear = useCallback(
-    (year) => dispatch({ type: 'SET_YEAR', payload: year }),
+    (value) => dispatch({ type: 'SET_YEAR', payload: value }),
     []
   );
   const setAudioUrl = useCallback(
-    (audioUrl) => dispatch({ type: 'SET_AUDIO_URL', payload: audioUrl }),
+    (value) => dispatch({ type: 'SET_AUDIO_URL', payload: value }),
     []
   );
   const setVolume = useCallback(
-    (volume) => dispatch({ type: 'SET_VOLUME', payload: volume }),
+    (value) => dispatch({ type: 'SET_VOLUME', payload: value }),
     []
   );
   const setIsOn = useCallback(
-    (isOn) => dispatch({ type: 'SET_IS_ON', payload: isOn }),
+    (value) => dispatch({ type: 'SET_IS_ON', payload: value }),
     []
   );
   const setMetadata = useCallback(
-    (metadata) => dispatch({ type: 'SET_METADATA', payload: metadata }),
+    (value) => dispatch({ type: 'SET_METADATA', payload: value }),
     []
   );
   const setAvailableYears = useCallback(
-    (yearsOrUpdater) => dispatch({
-      type: 'SET_AVAILABLE_YEARS',
-      payload: yearsOrUpdater
-    }),
+    (value) => dispatch({ type: 'SET_AVAILABLE_YEARS', payload: value }),
     []
   );
   const setItemUids = useCallback(
-    (uids) => dispatch({ type: 'SET_ITEM_UIDS', payload: uids }),
+    (value) => dispatch({ type: 'SET_ITEM_UIDS', payload: value }),
     []
   );
   const setItemIndex = useCallback(
-    (index) => dispatch({ type: 'SET_ITEM_INDEX', payload: index }),
+    (value) => dispatch({ type: 'SET_ITEM_INDEX', payload: value }),
     []
   );
   const setIsLoading = useCallback(
-    (isLoading) => dispatch({ type: 'SET_IS_LOADING', payload: isLoading }),
+    (value) => dispatch({ type: 'SET_IS_LOADING', payload: value }),
     []
   );
   const setError = useCallback(
-    (error) => dispatch({ type: 'SET_ERROR', payload: error }),
+    (value) => dispatch({ type: 'SET_ERROR', payload: value }),
     []
   );
 
   const playItemByIndex = useCallback(async (idx) => {
     if (idx < 0 || idx >= itemUids.length) return;
+
     setIsLoading(true);
     const result = await fetchAudioById(itemUids[idx]);
     setAudioUrl(result.audioUrl);
@@ -151,7 +190,7 @@ export default function Radio() {
     if (itemIndex < itemUids.length - 1) {
       playItemByIndex(itemIndex + 1);
     }
-  }, [itemIndex, itemUids, playItemByIndex]);
+  }, [itemIndex, itemUids.length, playItemByIndex]);
 
   const prevItem = useCallback(() => {
     if (itemIndex > 0) {
@@ -159,102 +198,91 @@ export default function Radio() {
     }
   }, [itemIndex, playItemByIndex]);
 
-  // Use custom audio manager hook.
-  const { sound } = useAudioManager(audioUrl, isOn, volume);
+  useAudioManager(audioUrl, isOn, volume);
 
-  // Load saved volume from localStorage.
   useEffect(() => {
-    const savedVolume = localStorage.getItem("clientVolume");
-    if (savedVolume) setVolume(parseFloat(savedVolume));
+    const savedVolume = localStorage.getItem('clientVolume');
+    if (savedVolume) {
+      setVolume(Number.parseFloat(savedVolume));
+    }
   }, [setVolume]);
 
-  // Fetch available years on mount.
   useEffect(() => {
     async function loadYears() {
-      const { years, error } = await fetchAvailableYears();
-      if (error) {
-        setError(error);
+      const { years, error: loadError } = await fetchAvailableYears();
+
+      if (loadError) {
+        setError(loadError);
       } else if (years) {
         setAvailableYears(years);
       }
     }
+
     loadYears();
   }, [setAvailableYears, setError]);
 
-  // Parse URL parameters on mount.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const yearParam = params.get("year");
-    const autoplayParam = params.get("autoplay");
-    const audioIdParam = params.get("audioId");
     setInitialParams({
-      year: yearParam,
-      autoplay: autoplayParam,
-      audioId: audioIdParam,
+      year: params.get('year'),
+      autoplay: params.get('autoplay'),
+      audioId: params.get('audioId'),
+      audioTitle: params.get('audioTitle')
     });
   }, []);
 
-  // Initialization: Once initialParams and availableYears are ready, process URL parameters.
   useEffect(() => {
-    if (!initialParams || availableYears.length === 0) return;
-    
+    if (!initialParams || availableYears.length === 0) {
+      return;
+    }
+
     let initYear;
     if (initialParams.year) {
-      const urlYear = parseInt(initialParams.year, 10);
+      const urlYear = Number.parseInt(initialParams.year, 10);
       if (availableYears.includes(urlYear)) {
         initYear = urlYear;
       } else {
-        // Add the URL-specified year if it's not in availableYears.
         initYear = urlYear;
-        setAvailableYears(prev => {
-          const newYears = [...prev, urlYear];
-          return newYears.sort((a, b) => a - b);
-        });
+        setAvailableYears((prev) => [...prev, urlYear].sort((a, b) => a - b));
       }
     } else {
       initYear = availableYears[0];
     }
 
-    // Assume initialParams may contain a parameter for audioTitle (or similar)
-  async function initAudio() {
-    if (initialParams.audioId) {
-      // If a unique audio identifier is provided, call fetchAudioById.
-      setOverrideAudio(true);
-      setIsLoading(true);
-      const result = await fetchAudioById(initialParams.audioId);
-      setAudioUrl(result.audioUrl);
-      setMetadata(result.metadata);
-      setError(result.error);
-      setItemUids([initialParams.audioId]);
-      setItemIndex(0);
-      setIsLoading(false);
-      if (result.metadata && result.metadata.date) {
-        const metadataYear = parseInt(result.metadata.date, 10);
-        if (!availableYears.includes(metadataYear)) {
-          setAvailableYears(prev => {
-            const newYears = [...prev, metadataYear];
-            return newYears.sort((a, b) => a - b);
-          });
+    async function initAudio() {
+      if (initialParams.audioId) {
+        setOverrideAudio(true);
+        setIsLoading(true);
+        const result = await fetchAudioById(initialParams.audioId);
+        setAudioUrl(result.audioUrl);
+        setMetadata(result.metadata);
+        setError(result.error);
+        setItemUids([initialParams.audioId]);
+        setItemIndex(0);
+        setIsLoading(false);
+
+        if (result.metadata?.date) {
+          const metadataYear = Number.parseInt(result.metadata.date, 10);
+          if (!availableYears.includes(metadataYear)) {
+            setAvailableYears((prev) => [...prev, metadataYear].sort((a, b) => a - b));
+          }
+          initYear = metadataYear;
         }
-        initYear = metadataYear;
+      } else {
+        const result = await fetchAudioByYear(initYear, initialParams.audioTitle);
+        setAudioUrl(result.audioUrl);
+        setMetadata(result.metadata);
+        setItemUids(result.itemUids || []);
+        setItemIndex(0);
+        setError(result.error);
       }
-    } else {
-      // If no unique identifier is specified, use an optional 'audioTitle' parameter if provided.
-      const uniqueParam = initialParams.audioTitle; // You might need to add this parameter.
-      const result = await fetchAudioByYear(initYear, uniqueParam);
-      setAudioUrl(result.audioUrl);
-      setMetadata(result.metadata);
-      setItemUids(result.itemUids || []);
-      setItemIndex(0);
-      setError(result.error);
+
+      setYear(initYear);
+      if (initialParams.autoplay?.toLowerCase() === 'true') {
+        setIsOn(true);
+      }
+      setInitComplete(true);
     }
-    // Then update the year state and autoplay as needed.
-    setYear(initYear);
-    if (initialParams.autoplay && initialParams.autoplay.toLowerCase() === "true") {
-      setIsOn(true);
-    }
-    setInitComplete(true);
-  }
 
     initAudio();
   }, [
@@ -271,9 +299,11 @@ export default function Radio() {
     setItemIndex
   ]);
 
-  // If no override is active and initialization is complete, fetch audio by year when year changes.
   useEffect(() => {
-    if (!initComplete || overrideAudio) return;
+    if (!initComplete || overrideAudio) {
+      return;
+    }
+
     (async () => {
       setIsLoading(true);
       const result = await fetchAudioByYear(year);
@@ -284,35 +314,53 @@ export default function Radio() {
       setError(result.error);
       setIsLoading(false);
 
-      // Prefetch adjacent years to speed up tuning
       const currentIndex = availableYears.indexOf(year);
       const nextYear = availableYears[currentIndex + 1];
-      if (nextYear) fetchAudioByYear(nextYear);
       const prevYear = availableYears[currentIndex - 1];
-      if (prevYear) fetchAudioByYear(prevYear);
-    })();
-  }, [year, availableYears, overrideAudio, initComplete, setAudioUrl, setMetadata, setError, setIsLoading, setItemUids, setItemIndex]);
 
-  // Keep the browser URL in sync with the current state.
+      if (nextYear) {
+        fetchAudioByYear(nextYear);
+      }
+      if (prevYear) {
+        fetchAudioByYear(prevYear);
+      }
+    })();
+  }, [
+    year,
+    availableYears,
+    overrideAudio,
+    initComplete,
+    setAudioUrl,
+    setMetadata,
+    setError,
+    setIsLoading,
+    setItemUids,
+    setItemIndex
+  ]);
+
   useEffect(() => {
-    if (!initComplete) return;
+    if (!initComplete) {
+      return;
+    }
+
     const params = new URLSearchParams(window.location.search);
-    params.set("year", year);
+    params.set('year', year);
+
     if (isOn) {
-      params.set("autoplay", "true");
+      params.set('autoplay', 'true');
     } else {
-      params.delete("autoplay");
+      params.delete('autoplay');
     }
-    if (overrideAudio && initialParams && initialParams.audioId) {
-      params.set("audioId", initialParams.audioId);
+
+    if (overrideAudio && initialParams?.audioId) {
+      params.set('audioId', initialParams.audioId);
     } else {
-      params.delete("audioId");
+      params.delete('audioId');
     }
-    const newUrl = window.location.pathname + "?" + params.toString();
-    window.history.replaceState({}, '', newUrl);
+
+    window.history.replaceState({}, '', `${window.location.pathname}?${params.toString()}`);
   }, [year, isOn, overrideAudio, initialParams, initComplete]);
 
-  // Memoize the context value.
   const contextValue = useMemo(
     () => ({
       year,
@@ -339,44 +387,44 @@ export default function Radio() {
     }),
     [
       year,
+      setYear,
       audioUrl,
+      setAudioUrl,
       volume,
+      setVolume,
       isOn,
+      setIsOn,
       metadata,
+      setMetadata,
       availableYears,
+      setAvailableYears,
       itemUids,
       itemIndex,
-      isLoading,
-      error,
-      setYear,
-      setAudioUrl,
-      setVolume,
-      setIsOn,
-      setMetadata,
-      setAvailableYears,
       nextItem,
       prevItem,
+      isLoading,
       setIsLoading,
+      error,
       setError
     ]
   );
 
-  // Instead of an early return (which causes hook order changes),
-  // always call all hooks and then conditionally render the UI.
+  if (!initComplete) {
+    return <div className="radio-loading">Loading…</div>;
+  }
+
   return (
-    !initComplete ? (
-      <div className="radio-loading">Loading…</div>
-    ) : (
-      <RadioContext.Provider value={contextValue}>
-        <div className="radio-frame">
-          <DisplayScreen />
-          <YearSelector />
-          <div className="controls">
-            <ItemNavigator />
-            <Button />
-          </div>
-        </div>
-      </RadioContext.Provider>
-    )
+    <RadioContext.Provider value={contextValue}>
+      <div className="radio-frame">
+        <DisplayScreen />
+        {layoutSlots.map((slot) => (
+          groupedRadioLayout[slot].length > 0 ? (
+            <div key={slot} className={`radio-layout radio-layout--${slot}`}>
+              {groupedRadioLayout[slot].map(renderControl)}
+            </div>
+          ) : null
+        ))}
+      </div>
+    </RadioContext.Provider>
   );
 }

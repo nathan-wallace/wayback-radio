@@ -57,7 +57,6 @@ export default function TuningKnob() {
       <div className="knob-wrapper">
         <div className="knob tuning-knob" ref={knobRef}></div>
       </div>
-      <div className="knob-label">Tuning</div>
     </div>
   );
 }

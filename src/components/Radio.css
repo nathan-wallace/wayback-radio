@@ -187,12 +187,53 @@ body {
   transition: transform 0.2s ease;
 }
 
-/* Controls styling */
-.controls {
-  display: flex;
-  justify-content: space-around;
+/* Manifest-driven layout styling */
+.radio-layout {
   width: 100%;
-  margin: 1rem 0;
+  display: flex;
+  gap: 1rem;
+  margin: 0.75rem 0;
+}
+
+.radio-layout--timeline {
+  flex-direction: column;
+}
+
+.radio-layout--controls {
+  align-items: flex-end;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.radio-control {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.radio-control--item-navigation {
+  align-items: stretch;
+}
+
+.control-label {
+  color: #333;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.control--desktop-full-width {
+  width: 100%;
+}
+
+.control--desktop-stretch {
+  flex: 1 1 14rem;
+}
+
+.control--desktop-compact {
+  flex: 0 0 auto;
 }
 
 .knob-wrapper {
@@ -254,13 +295,6 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin: 0 1em;
-}
-
-.knob-label {
-  font-size: 0.9rem;
-  color: #333;
-  margin-top: 0.5em;
 }
 
 /* Button styling */
@@ -302,6 +336,7 @@ button svg{
   justify-content: center;
   align-items: center;
   gap: 1em;
+  width: 100%;
 }
 
 .item-navigation button {
@@ -388,11 +423,21 @@ button svg{
     min-height: 5em;
   }
 
-  .controls {
-    flex-direction: row;
-    align-items: center;
-    gap: 1rem;
-    margin: 1rem 0;
+  .radio-layout--controls {
+    justify-content: center;
+    align-items: stretch;
+  }
+
+  .radio-control {
+    width: 100%;
+  }
+
+  .control--mobile-full-width {
+    width: 100%;
+  }
+
+  .control--mobile-compact {
+    width: auto;
   }
 
   .knob-container {
@@ -403,10 +448,6 @@ button svg{
   .knob-wrapper {
     width: clamp(50px, 25vw, 70px);
     height: clamp(50px, 25vw, 70px);
-  }
-
-  .knob-label {
-    font-size: 0.8rem;
   }
 
   button {
