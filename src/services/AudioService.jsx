@@ -197,14 +197,12 @@ function writeLocalCache(storageKey, timestampKey, value) {
   }
 }
 
-function getBootstrappedYearResult(year, encodedTitle) {
-  if (encodedTitle) return null;
-
+function getBootstrappedYearResult(year) {
   const cached = bootstrapAudioByYear?.[year];
   if (!cached) return null;
 
-  const result = normalizeAudioResult({ ...cached, metadata: cached.metadata ? { ...cached.metadata } : null });
-  audioCache.set(`${year}-`, result);
+  const result = { ...cached, metadata: cached.metadata ? { ...cached.metadata } : null };
+  audioCache.set(`${year}`, result);
   return result;
 }
 
@@ -221,8 +219,8 @@ async function fetchWithCache(cacheKey, fetcher) {
   return request;
 }
 
-export async function fetchAudioByYear(year, encodedTitle = null) {
-  const cacheKey = `${year}-${encodedTitle || ''}`;
+export async function fetchAudioByYear(year) {
+  const cacheKey = `${year}`;
   if (audioCache.has(cacheKey)) {
     return audioCache.get(cacheKey);
   }
@@ -238,20 +236,14 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
     return normalizedLocalResult;
   }
 
-  const bootstrappedResult = getBootstrappedYearResult(year, encodedTitle);
+  const bootstrappedResult = getBootstrappedYearResult(year);
   if (bootstrappedResult) {
     return bootstrappedResult;
   }
 
   return fetchWithCache(cacheKey, async () => {
     try {
-      let query = `${year}`;
-      if (encodedTitle) {
-        const decodedTitle = decodeURIComponent(encodedTitle);
-        query = `${decodedTitle} ${year}`;
-      }
-
-      const searchUrl = `${BASE_URL}/search/?q=${encodeURIComponent(query)}&fa=original-format:sound+recording|digitized&fo=json`;
+      const searchUrl = `${BASE_URL}/search/?q=${encodeURIComponent(year)}&fa=original-format:sound+recording|digitized&fo=json`;
       const searchResponse = await fetch(searchUrl);
       const searchData = await searchResponse.json();
       const items = searchData.results || [];
@@ -267,7 +259,6 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
         const result = {
           audioUrl: null,
           metadata: null,
-          title: null,
           error: 'No playable audio found for this year.',
           itemUids: []
         };
@@ -280,16 +271,7 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
         return result;
       }
 
-      let selectedItem = playableItems[0];
-      if (encodedTitle) {
-        const decodedTitle = decodeURIComponent(encodedTitle);
-        const matchedItem = playableItems.find((item) => (
-          item.title?.toLowerCase().includes(decodedTitle.toLowerCase())
-        ));
-        if (matchedItem) {
-          selectedItem = matchedItem;
-        }
-      }
+      const selectedItem = playableItems[0];
 
       const itemId = selectedItem.id
         .replace(/^https?:\/\/(www\.)?loc\.gov\/item\//, '')
@@ -321,7 +303,6 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
         const result = {
           audioUrl: null,
           metadata: null,
-          title: null,
           error: 'No audio URL available for this item.',
           itemUids
         };
@@ -334,12 +315,10 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
         return result;
       }
 
-      const metadata = normalizeMetadata(buildMetadata(itemData, selectedItem, year));
-      const encodedAudioTitle = encodeURIComponent(itemId || metadata.title);
+      const metadata = buildMetadata(itemData, selectedItem, year);
       const result = {
         audioUrl,
         metadata,
-        title: encodedAudioTitle,
         error: null,
         itemUids
       };
@@ -356,8 +335,7 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
       const result = {
         audioUrl: null,
         metadata: null,
-        title: null,
-        error: 'Error fetching audio. Try another year or title.',
+        error: 'Error fetching audio. Try another year.',
         itemUids: []
       };
       audioCache.set(cacheKey, result);
