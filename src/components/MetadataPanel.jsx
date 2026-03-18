@@ -1,79 +1,124 @@
-import React, { useEffect, useState } from 'react';
-import { useRadio } from '../context/RadioContext';
+import React from 'react';
+import { metadataFieldSchema } from '../config/metadataFields';
 
-export default function MetadataPanel() {
-  const { isOn, metadata, audioUrl, error, isLoading } = useRadio();
-  const [shouldShow, setShouldShow] = useState(false);
+function renderLinkList(items = []) {
+  return items.map((item) => (
+    <li key={item.url}>
+      <a href={item.url} target="_blank" rel="noopener noreferrer">
+        {item.label}
+      </a>
+    </li>
+  ));
+}
 
-  useEffect(() => {
-    if (!isLoading && audioUrl && metadata && isOn) {
-      setShouldShow(true);
-    } else {
-      setShouldShow(false);
-    }
-  }, [isLoading, audioUrl, metadata, isOn]);
+function renderDetailsItems(field, value) {
+  if (field.itemRenderType === 'link') {
+    return <ul>{renderLinkList(value)}</ul>;
+  }
 
   return (
-    <>
-      {isLoading && <p className="loading">Loading...</p>}
-      {error && <p className="error">{error}</p>}
-      {shouldShow && (
-        <div className="now-playing">
-          <strong>{metadata?.title || 'Untitled Recording'}</strong><br />
-          {metadata?.contributor && <em>{metadata.contributor}</em>}<br />
-          {(metadata?.date || metadata?.genre) && (
-            <small>
-              {metadata.date}{metadata.date && metadata.genre ? ' · ' : ''}{metadata.genre}
-            </small>
-          )}<br />
-          {metadata?.summary && <p>{metadata.summary}</p>}
-          {metadata?.notes?.length > 0 && (
-            <ul style={{ paddingLeft: '1.2em', fontSize: '0.85em' }}>
-              {metadata.notes.map((note, idx) => <li key={idx}>{note}</li>)}
-            </ul>
-          )}
-          {metadata?.repository && (
-            <p style={{ fontSize: '0.85em' }}><strong>Repository:</strong><br />{metadata.repository}</p>
-          )}
-          {metadata?.formats?.length > 0 && (
-            <p style={{ fontSize: '0.85em' }}>
-              <strong>Format XML:</strong><br />
-              <a href={metadata.formats[0]} target="_blank" rel="noopener noreferrer">{metadata.formats[0]}</a>
-            </p>
-          )}
-          {metadata?.related_resources?.length > 0 && (
-            <p style={{ fontSize: '0.85em' }}>
-              <strong>Related Resource:</strong><br />
-              <a href={metadata.related_resources[0]} target="_blank" rel="noopener noreferrer">{metadata.related_resources[0]}</a>
-            </p>
-          )}
-          {metadata?.aka?.length > 0 && (
-            <details style={{ fontSize: '0.85em', marginTop: '0.5rem' }}>
-              <summary><strong>Also Known As (Links)</strong></summary>
-              <ul style={{ paddingLeft: '1.2em' }}>
-                {metadata.aka.map((link, i) => (
-                  <li key={i}><a href={link} target="_blank" rel="noopener noreferrer">{link}</a></li>
-                ))}
-              </ul>
-            </details>
-          )}
-          {metadata?.location && (
-            <p style={{ fontSize: '0.85em' }}>
-              <strong>Location:</strong> {metadata.location}
-            </p>
-          )}
-          {metadata?.image && (
-            <img
-              src={metadata.image}
-              alt="Recording cover"
-              style={{ maxWidth: '100px', marginTop: '0.5rem', borderRadius: '4px' }}
-            />
-          )}
-          <br />
-          <strong>Source:</strong><br />
-          <a href={metadata?.url} target="_blank" rel="noopener noreferrer">{metadata?.url}</a>
+    <ul>
+      {value.map((item) => (
+        <li key={`${field.key}-${item.label}`}>
+          <strong>{item.label}:</strong> {item.value}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function renderField(field, metadata) {
+  const rawValue = metadata[field.key];
+  const value = field.formatter ? field.formatter(rawValue, metadata) : rawValue;
+
+  switch (field.renderType) {
+    case 'text': {
+      const content = field.emphasize ? <em>{value}</em> : value;
+
+      if (field.className === 'metadata-title') {
+        return <strong className={field.className}>{field.label}: {content}</strong>;
+      }
+
+      if (field.compact) {
+        return <small className={field.className}>{content}</small>;
+      }
+
+      if (field.inlineLabel) {
+        return (
+          <p className={field.className}>
+            <strong>{field.label}:</strong> {content}
+          </p>
+        );
+      }
+
+      return (
+        <p className={field.className}>
+          {field.label && <strong>{field.label}:</strong>}
+          {field.label ? ' ' : ''}
+          {content}
+        </p>
+      );
+    }
+    case 'list':
+      return <ul>{value.map((item, index) => <li key={`${field.key}-${index}`}>{item}</li>)}</ul>;
+    case 'link': {
+      const links = Array.isArray(value) ? value : [];
+      if (links.length === 1) {
+        const [item] = links;
+        return (
+          <p>
+            <strong>{field.label}:</strong>
+            <br />
+            <a href={item.url} target="_blank" rel="noopener noreferrer">
+              {item.label}
+            </a>
+          </p>
+        );
+      }
+
+      return (
+        <div>
+          <strong>{field.label}:</strong>
+          <ul>{renderLinkList(links)}</ul>
         </div>
-      )}
-    </>
+      );
+    }
+    case 'image':
+      return (
+        <img
+          src={value.src}
+          alt={value.alt}
+          style={{ maxWidth: '100px', marginTop: '0.5rem', borderRadius: '4px' }}
+        />
+      );
+    case 'details':
+      return (
+        <details>
+          <summary><strong>{field.label}</strong></summary>
+          {renderDetailsItems(field, value)}
+        </details>
+      );
+    default:
+      return null;
+  }
+}
+
+export default function MetadataPanel({ metadata }) {
+  if (!metadata) return null;
+
+  return (
+    <div className="now-playing">
+      {metadataFieldSchema.map((field) => {
+        if (!field.isVisible(metadata)) {
+          return null;
+        }
+
+        return (
+          <div key={field.key} className={`metadata-field metadata-field-${field.renderType}`}>
+            {renderField(field, metadata)}
+          </div>
+        );
+      })}
+    </div>
   );
 }

@@ -1,4 +1,5 @@
 import archiveCache from '../data/archive-cache.json';
+import { createLinkItems, joinMetadataParts } from '../config/metadataFields';
 
 const BASE_URL = 'https://www.loc.gov';
 const AUDIO_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
@@ -25,38 +26,144 @@ function extractUid(itemId) {
   return match ? match[1] : null;
 }
 
-function processLinks(items) {
-  if (!items || !Array.isArray(items)) return [];
-  return items
-    .map((item) => {
-      if (typeof item === 'string') return item;
-      if (item && typeof item === 'object' && item.link) return item.link;
-      return null;
-    })
-    .filter(Boolean);
+function normalizeText(value) {
+  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) return value.map((item) => normalizeText(item)).filter(Boolean).join(', ');
+  return '';
+}
+
+function normalizeList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => normalizeText(item)).filter(Boolean);
+}
+
+function normalizeLinkItems(items) {
+  if (!Array.isArray(items)) return [];
+
+  return createLinkItems(items.map((item) => {
+    if (typeof item === 'string') {
+      return { label: item, url: item };
+    }
+
+    if (item?.link) {
+      return {
+        label: normalizeText(item.title || item.label || item.link),
+        url: item.link,
+      };
+    }
+
+    if (item?.url) {
+      return {
+        label: normalizeText(item.label || item.title || item.url),
+        url: item.url,
+      };
+    }
+
+    return null;
+  }).filter(Boolean));
+}
+
+function normalizeImage(imageUrl, title) {
+  const src = Array.isArray(imageUrl) ? imageUrl[0] : imageUrl;
+  if (!src) return null;
+
+  return {
+    src,
+    alt: title ? `${title} cover` : 'Recording cover',
+  };
 }
 
 function buildMetadata(itemData, selectedItem, fallbackYear) {
-  return {
-    title: itemData.title || itemData.item?.title || 'Untitled Recording',
-    date: itemData.date || itemData.item?.date || fallbackYear?.toString() || '',
-    url: itemData.url || selectedItem?.url || '',
+  const title = normalizeText(itemData.title || itemData.item?.title) || 'Untitled Recording';
+  const date = normalizeText(itemData.date || itemData.item?.date || fallbackYear?.toString());
+  const url = normalizeText(itemData.url || selectedItem?.url);
+  const genre = normalizeText(itemData.item?.genre || itemData.type);
+  const notes = normalizeList(itemData.item?.notes);
+  const relatedResources = normalizeLinkItems(itemData.item?.related_resources);
+  const formats = normalizeLinkItems(itemData.item?.other_formats);
+  const aka = normalizeLinkItems(itemData.item?.aka || itemData.aka);
+  const metadata = {
+    title,
+    date,
+    url,
     uid: extractUid(selectedItem?.id || itemData.id),
-    contributor: itemData.item?.contributor?.join(', ') || itemData.contributor?.join(', ') || '',
-    summary: itemData.item?.summary || (Array.isArray(itemData.item?.description)
-      ? itemData.item.description.join(' ')
-      : itemData.description?.[0]) || '',
-    genre: itemData.item?.genre?.join(', ') || (Array.isArray(itemData.type)
-      ? itemData.type.join(', ')
-      : itemData.type) || '',
-    image: itemData.image_url?.[0] || itemData.item?.image_url || null,
-    notes: Array.isArray(itemData.item?.notes) ? itemData.item.notes : [],
-    repository: itemData.item?.repository || '',
-    aka: processLinks(itemData.item?.aka || itemData.aka),
-    related_resources: processLinks(itemData.item?.related_resources),
-    formats: processLinks(itemData.item?.other_formats),
-    location: (itemData.item?.location || []).join(', ') || '',
-    mime_type: (itemData.item?.mime_type || []).join(', ') || ''
+    contributor: normalizeText(itemData.item?.contributor || itemData.contributor),
+    summary: normalizeText(
+      itemData.item?.summary
+      || itemData.item?.description
+      || itemData.description?.[0]
+    ),
+    genre,
+    recordingInfo: joinMetadataParts(date, genre),
+    image: normalizeImage(itemData.image_url || itemData.item?.image_url, title),
+    notes,
+    repository: normalizeText(itemData.item?.repository),
+    aka,
+    relatedResources,
+    formats,
+    location: normalizeText(itemData.item?.location),
+    mimeType: normalizeText(itemData.item?.mime_type),
+    source: url ? [{ label: url, url }] : [],
+  };
+
+  metadata.technicalDetails = [
+    metadata.uid ? { label: 'UID', value: metadata.uid } : null,
+    metadata.mimeType ? { label: 'Mime Type', value: metadata.mimeType } : null,
+  ].filter(Boolean);
+
+  return metadata;
+}
+
+function normalizeMetadata(metadata) {
+  if (!metadata) return null;
+
+  const title = normalizeText(metadata.title) || 'Untitled Recording';
+  const date = normalizeText(metadata.date);
+  const genre = normalizeText(metadata.genre);
+  const url = normalizeText(metadata.url);
+  const normalized = {
+    title,
+    date,
+    url,
+    uid: normalizeText(metadata.uid),
+    contributor: normalizeText(metadata.contributor),
+    summary: normalizeText(metadata.summary),
+    genre,
+    recordingInfo: normalizeText(metadata.recordingInfo) || joinMetadataParts(date, genre),
+    image: metadata.image?.src
+      ? metadata.image
+      : normalizeImage(metadata.image, title),
+    notes: normalizeList(metadata.notes),
+    repository: normalizeText(metadata.repository),
+    aka: normalizeLinkItems(metadata.aka),
+    relatedResources: normalizeLinkItems(metadata.relatedResources || metadata.related_resources),
+    formats: normalizeLinkItems(metadata.formats),
+    location: normalizeText(metadata.location),
+    mimeType: normalizeText(metadata.mimeType || metadata.mime_type),
+    source: normalizeLinkItems(metadata.source || (url ? [{ label: url, url }] : [])),
+  };
+
+  normalized.technicalDetails = Array.isArray(metadata.technicalDetails)
+    ? metadata.technicalDetails
+        .map((item) => ({
+          label: normalizeText(item?.label),
+          value: normalizeText(item?.value),
+        }))
+        .filter((item) => item.label && item.value)
+    : [
+        normalized.uid ? { label: 'UID', value: normalized.uid } : null,
+        normalized.mimeType ? { label: 'Mime Type', value: normalized.mimeType } : null,
+      ].filter(Boolean);
+
+  return normalized;
+}
+
+function normalizeAudioResult(result) {
+  if (!result) return result;
+
+  return {
+    ...result,
+    metadata: normalizeMetadata(result.metadata),
   };
 }
 
@@ -124,8 +231,9 @@ export async function fetchAudioByYear(year) {
     AUDIO_CACHE_TTL
   );
   if (localResult) {
-    audioCache.set(cacheKey, localResult);
-    return localResult;
+    const normalizedLocalResult = normalizeAudioResult(localResult);
+    audioCache.set(cacheKey, normalizedLocalResult);
+    return normalizedLocalResult;
   }
 
   const bootstrappedResult = getBootstrappedYearResult(year);
@@ -253,8 +361,9 @@ export async function fetchAudioById(audioId) {
     AUDIO_CACHE_TTL
   );
   if (localResult) {
-    audioCache.set(cacheKey, localResult);
-    return localResult;
+    const normalizedLocalResult = normalizeAudioResult(localResult);
+    audioCache.set(cacheKey, normalizedLocalResult);
+    return normalizedLocalResult;
   }
 
   let requestUrl = audioId;
@@ -295,7 +404,7 @@ export async function fetchAudioById(audioId) {
         return { audioUrl: null, metadata: null, error: 'No audio found for that id.' };
       }
 
-      const metadata = buildMetadata(selectedItem, selectedItem);
+      const metadata = normalizeMetadata(buildMetadata(selectedItem, selectedItem));
       const result = { audioUrl, metadata, error: null };
       audioCache.set(cacheKey, result);
       writeLocalCache(
