@@ -1,0 +1,156 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const repoRoot = path.resolve(__dirname, '..');
+const outputPath = path.join(repoRoot, 'src', 'data', 'archive-cache.json');
+const BASE_URL = 'https://www.loc.gov';
+const SEARCH_URL = `${BASE_URL}/search/?q=sound+recording&fa=original-format:sound+recording|digitized&fo=json&c=100`;
+
+function extractUid(itemId) {
+  if (!itemId) return null;
+  const match = itemId.match(/ihas\.(\d+)/);
+  return match ? match[1] : null;
+}
+
+function extractYear(dateValue) {
+  if (!dateValue) return null;
+  const match = String(dateValue).match(/\b(18|19|20)\d{2}\b/);
+  return match ? Number.parseInt(match[0], 10) : null;
+}
+
+function getAudioUrl(itemData) {
+  for (const resource of itemData.resources || []) {
+    if (resource.audio) return resource.audio;
+    const fileMatch = resource.files?.find((file) => (
+      file.mimetype?.includes('audio') || file.url?.match(/\.(mp3|wav)$/i)
+    ));
+    if (fileMatch) return fileMatch.url;
+  }
+  return null;
+}
+
+function processLinks(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object' && item.link) return item.link;
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function buildMetadata(itemData, fallbackYear, selectedItem) {
+  return {
+    title: itemData.title || itemData.item?.title || 'Untitled Recording',
+    date: itemData.date || itemData.item?.date || String(fallbackYear),
+    url: itemData.url || selectedItem?.url || '',
+    uid: extractUid(selectedItem?.id || itemData.id),
+    contributor: itemData.item?.contributor?.join(', ') || itemData.contributor?.join(', ') || '',
+    summary: itemData.item?.summary || (Array.isArray(itemData.item?.description)
+      ? itemData.item.description.join(' ')
+      : itemData.description?.[0]) || '',
+    genre: itemData.item?.genre?.join(', ') || (Array.isArray(itemData.type)
+      ? itemData.type.join(', ')
+      : itemData.type) || '',
+    image: itemData.image_url?.[0] || itemData.item?.image_url || null,
+    notes: Array.isArray(itemData.item?.notes) ? itemData.item.notes : [],
+    repository: itemData.item?.repository || '',
+    aka: processLinks(itemData.item?.aka || itemData.aka),
+    related_resources: processLinks(itemData.item?.related_resources),
+    formats: processLinks(itemData.item?.other_formats),
+    location: (itemData.item?.location || []).join(', ') || '',
+    mime_type: (itemData.item?.mime_type || []).join(', ') || ''
+  };
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'wayback-radio-cache-builder/1.0'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Request failed (${response.status}) for ${url}`);
+  }
+
+  return response.json();
+}
+
+async function fetchAvailableYearsWithSamples() {
+  const data = await fetchJson(SEARCH_URL);
+  const yearlySamples = new Map();
+
+  for (const item of data.results || []) {
+    const year = extractYear(item.date);
+    const hasPlayableAudio = item.resources?.some((resource) => (
+      resource.audio || resource.url?.match(/\.(mp3|wav)$/i)
+    ));
+
+    if (!year || !hasPlayableAudio || yearlySamples.has(year)) {
+      continue;
+    }
+
+    yearlySamples.set(year, item);
+  }
+
+  return Array.from(yearlySamples.entries()).sort((a, b) => a[0] - b[0]);
+}
+
+async function buildYearCache([year, selectedItem]) {
+  const itemId = selectedItem.id
+    .replace(/^https?:\/\/(www\.)?loc\.gov\/item\//, '')
+    .replace(/\/$/, '');
+  const itemUrl = `${BASE_URL}/item/${itemId}/?fo=json`;
+  const itemData = await fetchJson(itemUrl);
+  const audioUrl = getAudioUrl(itemData);
+
+  if (!audioUrl) {
+    return [String(year), null];
+  }
+
+  return [String(year), {
+    audioUrl,
+    metadata: buildMetadata(itemData, year, selectedItem),
+    title: encodeURIComponent(itemId || itemData.title || String(year)),
+    error: null,
+    itemUids: [extractUid(selectedItem.id)].filter(Boolean)
+  }];
+}
+
+async function main() {
+  console.log('Fetching yearly archive samples from the Library of Congress API...');
+  const yearEntries = await fetchAvailableYearsWithSamples();
+  const availableYears = yearEntries.map(([year]) => year);
+  const audioByYear = {};
+
+  for (const entry of yearEntries) {
+    const [year, yearCache] = await buildYearCache(entry);
+    if (yearCache) {
+      audioByYear[year] = yearCache;
+      console.log(`Cached bootstrap audio for ${year}`);
+    } else {
+      console.warn(`Skipped ${year}: no audio URL found in item payload.`);
+    }
+  }
+
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    source: SEARCH_URL,
+    availableYears,
+    audioByYear
+  };
+
+  await mkdir(path.dirname(outputPath), { recursive: true });
+  await writeFile(outputPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  console.log(`Wrote ${outputPath}`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
