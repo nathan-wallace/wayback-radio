@@ -1,58 +1,167 @@
 // useAudioManager.jsx
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Howl } from 'howler';
+
+const FADE_DURATION_MS = 500;
 
 export const useAudioManager = (audioUrl, isOn, volume) => {
   const [sound, setSound] = useState(null);
+  const [transportState, setTransportState] = useState('paused');
+  const pauseTimerRef = useRef(null);
+  const fadeTimerRef = useRef(null);
+  const isOnRef = useRef(isOn);
+  const volumeRef = useRef(volume);
+  const activeSoundRef = useRef(null);
 
-  // Create a new Howl instance only when audioUrl changes.
+  const clearPendingTimers = useCallback(() => {
+    if (pauseTimerRef.current) {
+      clearTimeout(pauseTimerRef.current);
+      pauseTimerRef.current = null;
+    }
+
+    if (fadeTimerRef.current) {
+      clearTimeout(fadeTimerRef.current);
+      fadeTimerRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
-    if (!audioUrl) return;
+    isOnRef.current = isOn;
+  }, [isOn]);
+
+  useEffect(() => {
+    volumeRef.current = volume;
+  }, [volume]);
+
+  useEffect(() => {
+    if (!audioUrl) {
+      activeSoundRef.current = null;
+      setSound(null);
+      setTransportState('paused');
+      clearPendingTimers();
+      return undefined;
+    }
+
+    clearPendingTimers();
+    setTransportState('paused');
 
     const newSound = new Howl({
       src: [audioUrl],
       autoplay: false,
       html5: true,
-      volume: 0, // Start with zero volume for a fade-in.
+      volume: 0,
       format: ['mp3'],
-      onplay: () => newSound.fade(0, volume, 500),
+      onplay: () => {
+        if (activeSoundRef.current !== newSound) {
+          return;
+        }
+
+        clearPendingTimers();
+
+        if (!isOnRef.current) {
+          newSound.pause();
+          setTransportState('paused');
+          return;
+        }
+
+        newSound.fade(0, volumeRef.current, FADE_DURATION_MS);
+        fadeTimerRef.current = setTimeout(() => {
+          fadeTimerRef.current = null;
+        }, FADE_DURATION_MS);
+        setTransportState('playing');
+      },
+      onpause: () => {
+        if (activeSoundRef.current !== newSound) {
+          return;
+        }
+
+        clearPendingTimers();
+        setTransportState('paused');
+      },
+      onstop: () => {
+        if (activeSoundRef.current !== newSound) {
+          return;
+        }
+
+        clearPendingTimers();
+        setTransportState('paused');
+      },
+      onplayerror: () => {
+        if (activeSoundRef.current !== newSound) {
+          return;
+        }
+
+        clearPendingTimers();
+        setTransportState('paused');
+      },
+      onloaderror: () => {
+        if (activeSoundRef.current !== newSound) {
+          return;
+        }
+
+        clearPendingTimers();
+        setTransportState('paused');
+      }
     });
 
+    activeSoundRef.current = newSound;
     setSound(newSound);
 
     return () => {
-      if (newSound) {
-        newSound.stop();
-        newSound.unload();
+      if (activeSoundRef.current === newSound) {
+        activeSoundRef.current = null;
       }
+      clearPendingTimers();
+      newSound.stop();
+      newSound.unload();
+      setTransportState('paused');
     };
-  }, [audioUrl]);
+  }, [audioUrl, clearPendingTimers]);
 
-  // Manage play/pause without reloading the audio.
   useEffect(() => {
-    if (!sound) return;
+    if (!sound) {
+      return undefined;
+    }
+
+    clearPendingTimers();
 
     if (isOn) {
       if (!sound.playing()) {
+        setTransportState('buffering');
         sound.play();
-        sound.fade(0, volume, 500);
+      } else {
+        sound.fade(sound.volume(), volume, FADE_DURATION_MS);
+        fadeTimerRef.current = setTimeout(() => {
+          fadeTimerRef.current = null;
+        }, FADE_DURATION_MS);
+        setTransportState('playing');
       }
     } else {
-      sound.fade(volume, 0, 500);
-      setTimeout(() => {
+      const startVolume = sound.volume();
+      sound.fade(startVolume, 0, FADE_DURATION_MS);
+      fadeTimerRef.current = setTimeout(() => {
+        fadeTimerRef.current = null;
+      }, FADE_DURATION_MS);
+      pauseTimerRef.current = setTimeout(() => {
+        pauseTimerRef.current = null;
         if (sound.playing()) {
           sound.pause();
+        } else {
+          setTransportState('paused');
         }
-      }, 500);
+      }, FADE_DURATION_MS);
     }
-  }, [isOn, sound, volume]);
 
-  // Update volume changes.
+    return () => {
+      clearPendingTimers();
+    };
+  }, [clearPendingTimers, isOn, sound, volume]);
+
   useEffect(() => {
-    if (sound) {
+    if (sound && transportState === 'playing') {
       sound.volume(volume);
     }
-  }, [volume, sound]);
+  }, [transportState, volume, sound]);
 
-  return { sound };
+  return { sound, transportState };
 };
