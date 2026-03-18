@@ -36,7 +36,7 @@ let availableYearsCache = bootstrapCatalogEntries.length
 
 function extractUid(itemId) {
   if (!itemId) return null;
-  const match = itemId.match(/ihas\.(\d+)/);
+  const match = String(itemId).match(/ihas\.(\d+)/);
   return match ? match[1] : null;
 }
 
@@ -46,15 +46,60 @@ function extractYear(dateValue) {
   return match ? Number.parseInt(match[0], 10) : null;
 }
 
-function processLinks(items) {
-  if (!items || !Array.isArray(items)) return [];
-  return items
-    .map((item) => {
-      if (typeof item === 'string') return item;
-      if (item && typeof item === 'object' && item.link) return item.link;
-      return null;
-    })
-    .filter(Boolean);
+function normalizeText(value) {
+  if (Array.isArray(value)) {
+    return normalizeText(value.find((item) => normalizeText(item)));
+  }
+
+  if (value == null) return '';
+  const text = String(value).trim();
+  return text;
+}
+
+function normalizeList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => normalizeText(item)).filter(Boolean);
+}
+
+function normalizeImage(value, fallbackAlt = 'Recording cover') {
+  const src = Array.isArray(value)
+    ? value.find((item) => typeof item === 'string' && item.trim())
+    : typeof value === 'string'
+      ? value.trim()
+      : value?.src;
+
+  if (!src) return null;
+
+  return {
+    src,
+    alt: fallbackAlt || 'Recording cover'
+  };
+}
+
+function normalizeLinkItems(items = []) {
+  if (!Array.isArray(items)) return [];
+
+  return createLinkItems(items.map((item) => {
+    if (typeof item === 'string') {
+      return { label: item, url: item };
+    }
+
+    if (item?.url) {
+      return {
+        label: item.label || item.url,
+        url: item.url
+      };
+    }
+
+    if (item?.link) {
+      return {
+        label: item.title || item.label || item.link,
+        url: item.link
+      };
+    }
+
+    return null;
+  }).filter(Boolean));
 }
 
 function normalizeCatalogEntries(entries) {
@@ -88,9 +133,13 @@ function normalizeCatalogEntries(entries) {
       return;
     }
 
+    const nextCount = existing.itemCount == null || normalizedEntry.itemCount == null
+      ? existing.itemCount ?? normalizedEntry.itemCount
+      : existing.itemCount + normalizedEntry.itemCount;
+
     deduped.set(year, {
       ...existing,
-      itemCount: (existing.itemCount || 0) + (normalizedEntry.itemCount || 0),
+      itemCount: nextCount,
       sampleItemIds: [...new Set([
         ...existing.sampleItemIds,
         ...normalizedEntry.sampleItemIds
@@ -117,6 +166,17 @@ function buildCatalogPayload(entries, meta = {}) {
     generatedAt: meta.generatedAt || null,
     error: meta.error || null
   };
+}
+
+function processLinks(items) {
+  if (!items || !Array.isArray(items)) return [];
+  return items
+    .map((item) => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object' && item.link) return item.link;
+      return null;
+    })
+    .filter(Boolean);
 }
 
 function buildMetadata(itemData, selectedItem, fallbackYear) {
@@ -213,6 +273,104 @@ function normalizeAudioResult(result) {
   };
 }
 
+function extractLocItemId(itemId) {
+  const normalized = normalizeText(itemId);
+  if (!normalized) return null;
+
+  return normalized
+    .replace(/^https?:\/\/(www\.)?loc\.gov\/item\//, '')
+    .replace(/^item\//, '')
+    .replace(/\/?(\?fo=json)?$/, '')
+    .replace(/^\//, '');
+}
+
+function normalizeRouteIdentity(value) {
+  const raw = normalizeText(value);
+  if (!raw) return null;
+
+  let decoded = raw;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch (error) {
+    decoded = raw;
+  }
+
+  const normalized = extractLocItemId(decoded) || decoded;
+  return normalized
+    .toLowerCase()
+    .replace(/^ihas\./, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function buildItemIdentityVariants(item) {
+  const itemId = extractLocItemId(item?.id);
+  const title = normalizeText(item?.title || item?.item?.title);
+  const uid = extractUid(item?.id);
+
+  return [
+    item?.id,
+    itemId,
+    uid,
+    uid ? `ihas.${uid}` : null,
+    title,
+    title ? encodeURIComponent(title) : null,
+    itemId ? encodeURIComponent(itemId) : null,
+  ]
+    .map((candidate) => normalizeRouteIdentity(candidate))
+    .filter(Boolean);
+}
+
+function getItemRouteId(item, itemData = null) {
+  const itemId = extractLocItemId(item?.id || itemData?.id);
+  if (itemId) return itemId;
+
+  const title = normalizeText(itemData?.title || itemData?.item?.title || item?.title);
+  return title ? encodeURIComponent(title) : null;
+}
+
+function selectPlayableItemForYear(items, year, requestedIdentity = null) {
+  const playableItems = (Array.isArray(items) ? items : []).filter((item) => isPlayableSearchItem(item));
+  const yearMatches = playableItems.filter((item) => extractYear(item.date) === year);
+  const candidates = yearMatches.length > 0 ? yearMatches : playableItems;
+  const normalizedIdentity = normalizeRouteIdentity(requestedIdentity);
+
+  if (!normalizedIdentity) {
+    return {
+      selectedItem: candidates[0] || null,
+      playableItems,
+      yearMatches,
+      candidates,
+    };
+  }
+
+  const exactMatch = candidates.find((item) => buildItemIdentityVariants(item).includes(normalizedIdentity));
+
+  return {
+    selectedItem: exactMatch || candidates[0] || null,
+    playableItems,
+    yearMatches,
+    candidates,
+  };
+}
+
+function isBootstrapSelectionMatch(cached, requestedIdentity) {
+  if (!requestedIdentity) return true;
+
+  const normalizedIdentity = normalizeRouteIdentity(requestedIdentity);
+  if (!normalizedIdentity) return true;
+
+  const candidates = [
+    cached?.itemId,
+    cached?.title,
+    cached?.metadata?.title,
+    cached?.metadata?.uid,
+    ...(cached?.itemUids || []),
+  ].map((value) => normalizeRouteIdentity(value)).filter(Boolean);
+
+  return candidates.includes(normalizedIdentity);
+}
+
 function isPlayableResource(resource) {
   return Boolean(
     resource?.audio
@@ -257,12 +415,18 @@ function writeLocalCache(storageKey, timestampKey, value) {
   }
 }
 
-function getBootstrappedYearResult(year) {
+function getBootstrappedYearResult(year, requestedIdentity = null) {
   const cached = bootstrapAudioByYear?.[year];
-  if (!cached) return null;
+  if (!cached || !isBootstrapSelectionMatch(cached, requestedIdentity)) {
+    return null;
+  }
 
-  const result = { ...cached, metadata: cached.metadata ? { ...cached.metadata } : null };
-  audioCache.set(`${year}`, result);
+  const result = normalizeAudioResult({
+    ...cached,
+    itemId: cached.itemId || cached.title || null,
+    metadata: cached.metadata ? { ...cached.metadata } : null,
+  });
+  audioCache.set(`${year}-${requestedIdentity || ''}`, result);
   return result;
 }
 
@@ -403,8 +567,13 @@ function getAudioUrlFromResources(itemData) {
   return null;
 }
 
-export async function fetchAudioByYear(year, encodedTitle = null) {
-  const cacheKey = `${year}-${encodedTitle || ''}`;
+async function fetchJson(url) {
+  const response = await fetch(url);
+  return response.json();
+}
+
+export async function fetchAudioByYear(year, requestedIdentity = null) {
+  const cacheKey = `${year}-${requestedIdentity || ''}`;
   if (audioCache.has(cacheKey)) {
     return audioCache.get(cacheKey);
   }
@@ -420,7 +589,7 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
     return normalizedLocalResult;
   }
 
-  const bootstrappedResult = getBootstrappedYearResult(year);
+  const bootstrappedResult = getBootstrappedYearResult(year, requestedIdentity);
   if (bootstrappedResult) {
     return bootstrappedResult;
   }
@@ -428,13 +597,14 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
   return fetchWithCache(cacheKey, async () => {
     try {
       const searchUrl = `${BASE_URL}/search/?q=${encodeURIComponent(year)}&fa=original-format:sound+recording|digitized&fo=json`;
-      const searchResponse = await fetch(searchUrl);
-      const searchData = await searchResponse.json();
+      const searchData = await fetchJson(searchUrl);
       const items = searchData.results || [];
-      const playableItems = items.filter((item) => isPlayableSearchItem(item));
-      const itemUids = playableItems.map((item) => extractUid(item.id)).filter(Boolean);
+      const { selectedItem, yearMatches, candidates } = selectPlayableItemForYear(items, year, requestedIdentity);
+      const itemUids = (yearMatches.length > 0 ? yearMatches : candidates)
+        .map((item) => extractUid(item.id))
+        .filter(Boolean);
 
-      if (playableItems.length === 0) {
+      if (!selectedItem) {
         const result = {
           audioUrl: null,
           metadata: null,
@@ -450,14 +620,9 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
         return result;
       }
 
-      const selectedItem = playableItems[0];
-
-      const itemId = selectedItem.id
-        .replace(/^https?:\/\/(www\.)?loc\.gov\/item\//, '')
-        .replace(/\/$/, '');
+      const itemId = extractLocItemId(selectedItem.id);
       const itemUrl = `${BASE_URL}/item/${itemId}/?fo=json`;
-      const itemResponse = await fetch(itemUrl);
-      const itemData = await itemResponse.json();
+      const itemData = await fetchJson(itemUrl);
       const audioUrl = getAudioUrlFromResources(itemData);
 
       if (!audioUrl) {
@@ -477,12 +642,13 @@ export async function fetchAudioByYear(year, encodedTitle = null) {
       }
 
       const metadata = buildMetadata(itemData, selectedItem, year);
-      const result = {
+      const result = normalizeAudioResult({
         audioUrl,
         metadata,
         error: null,
-        itemUids
-      };
+        itemUids,
+        itemId: getItemRouteId(selectedItem, itemData)
+      });
 
       audioCache.set(cacheKey, result);
       writeLocalCache(
@@ -536,8 +702,7 @@ export async function fetchAudioById(audioId) {
 
   return fetchWithCache(cacheKey, async () => {
     try {
-      const response = await fetch(requestUrl);
-      const selectedItem = await response.json();
+      const selectedItem = await fetchJson(requestUrl);
       if (!selectedItem) {
         return { audioUrl: null, metadata: null, error: 'No audio found for that id.' };
       }
@@ -549,7 +714,12 @@ export async function fetchAudioById(audioId) {
       }
 
       const metadata = normalizeMetadata(buildMetadata(selectedItem, selectedItem));
-      const result = { audioUrl, metadata, error: null };
+      const result = {
+        audioUrl,
+        metadata,
+        error: null,
+        itemId: getItemRouteId(selectedItem, selectedItem)
+      };
       audioCache.set(cacheKey, result);
       writeLocalCache(
         `${AUDIO_ID_CACHE_PREFIX}${cacheKey}`,
@@ -640,3 +810,13 @@ export function mergeCatalogYearEntry(entries, year, entryPatch = {}) {
     { year, ...entryPatch }
   ]);
 }
+
+export const __testing = {
+  extractUid,
+  extractYear,
+  normalizeRouteIdentity,
+  selectPlayableItemForYear,
+  getItemRouteId,
+  normalizeMetadata,
+  processLinks,
+};

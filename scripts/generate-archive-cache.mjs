@@ -7,13 +7,34 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const outputPath = path.join(repoRoot, 'src', 'data', 'archive-cache.json');
 const BASE_URL = 'https://www.loc.gov';
-const SEARCH_URL = `${BASE_URL}/search/?q=sound+recording&fa=original-format:sound+recording|digitized&fo=json&c=100`;
+const SEARCH_PARAMS = {
+  q: 'sound recording',
+  fa: 'original-format:sound recording|digitized',
+  fo: 'json',
+  c: '100'
+};
 const MAX_SAMPLE_IDS = 3;
+const MAX_CATALOG_PAGES = 100;
+
+function buildSearchUrl(pageNumber = 1) {
+  const params = new URLSearchParams({
+    ...SEARCH_PARAMS,
+    sp: String(pageNumber)
+  });
+  return `${BASE_URL}/search/?${params.toString()}`;
+}
 
 function extractUid(itemId) {
   if (!itemId) return null;
   const match = itemId.match(/ihas\.(\d+)/);
   return match ? match[1] : null;
+}
+
+function extractLocItemId(itemId) {
+  if (!itemId) return null;
+  return String(itemId)
+    .replace(/^https?:\/\/(www\.)?loc\.gov\/item\//, '')
+    .replace(/\/?$/, '');
 }
 
 function extractYear(dateValue) {
@@ -101,48 +122,109 @@ async function readExistingCache() {
   }
 }
 
-async function fetchCatalogWithSamples() {
-  const data = await fetchJson(SEARCH_URL);
-  const yearlySamples = new Map();
+function resolveNextPage(pagination, currentPage, resultCount) {
+  const nextCandidates = [
+    pagination?.next,
+    pagination?.next_page,
+    pagination?.nextPage,
+    pagination?.next_url
+  ].filter(Boolean);
 
-  for (const item of data.results || []) {
-    const year = extractYear(item.date);
-
-    if (!year || !isPlayableSearchItem(item)) {
-      continue;
+  for (const candidate of nextCandidates) {
+    if (typeof candidate === 'number' && candidate > currentPage) {
+      return candidate;
     }
 
-    const existing = yearlySamples.get(year) || {
-      year,
-      itemCount: 0,
-      sampleItemIds: [],
-      sampleItem: null,
-      status: 'ready'
-    };
-
-    existing.itemCount += 1;
-
-    const uid = extractUid(item.id);
-    if (uid && !existing.sampleItemIds.includes(uid)) {
-      existing.sampleItemIds.push(uid);
-      existing.sampleItemIds = existing.sampleItemIds.slice(0, MAX_SAMPLE_IDS);
+    if (typeof candidate === 'string') {
+      const match = candidate.match(/[?&]sp=(\d+)/);
+      if (match) {
+        const nextPage = Number.parseInt(match[1], 10);
+        if (nextPage > currentPage) {
+          return nextPage;
+        }
+      }
     }
-
-    if (!existing.sampleItem) {
-      existing.sampleItem = item;
-    }
-
-    yearlySamples.set(year, existing);
   }
 
-  return Array.from(yearlySamples.values()).sort((a, b) => a.year - b.year);
+  const totalItems = Number.parseInt(
+    pagination?.total
+      || pagination?.total_items
+      || pagination?.results
+      || pagination?.count,
+    10
+  );
+  const pageSize = Number.parseInt(
+    pagination?.per_page
+      || pagination?.items_per_page
+      || pagination?.c,
+    10
+  ) || Number.parseInt(SEARCH_PARAMS.c, 10);
+
+  if (totalItems && currentPage * pageSize < totalItems) {
+    return currentPage + 1;
+  }
+
+  return resultCount === pageSize ? currentPage + 1 : null;
+}
+
+async function fetchCatalogWithSamples() {
+  const yearlySamples = new Map();
+  let currentPage = 1;
+  let pageCount = 0;
+
+  while (currentPage && pageCount < MAX_CATALOG_PAGES) {
+    const data = await fetchJson(buildSearchUrl(currentPage));
+    const results = Array.isArray(data?.results) ? data.results : [];
+
+    for (const item of results) {
+      const year = extractYear(item.date);
+
+      if (!year || !isPlayableSearchItem(item)) {
+        continue;
+      }
+
+      const existing = yearlySamples.get(year) || {
+        year,
+        itemCount: 0,
+        sampleItemIds: [],
+        sampleItem: null,
+        status: 'ready'
+      };
+
+      existing.itemCount += 1;
+
+      const uid = extractUid(item.id);
+      if (uid && !existing.sampleItemIds.includes(uid)) {
+        existing.sampleItemIds.push(uid);
+        existing.sampleItemIds = existing.sampleItemIds.slice(0, MAX_SAMPLE_IDS);
+      }
+
+      if (!existing.sampleItem) {
+        existing.sampleItem = item;
+      }
+
+      yearlySamples.set(year, existing);
+    }
+
+    pageCount += 1;
+    const nextPage = resolveNextPage(data?.pagination, currentPage, results.length);
+
+    if (!nextPage || nextPage === currentPage || results.length === 0) {
+      break;
+    }
+
+    currentPage = nextPage;
+  }
+
+  return {
+    entries: Array.from(yearlySamples.values()).sort((a, b) => a.year - b.year),
+    pageCount
+  };
 }
 
 async function buildYearCache(entry) {
   const selectedItem = entry.sampleItem;
-  const itemId = selectedItem.id
-    .replace(/^https?:\/\/(www\.)?loc\.gov\/item\//, '')
-    .replace(/\/$/, '');
+  const itemId = extractLocItemId(selectedItem.id);
   const itemUrl = `${BASE_URL}/item/${itemId}/?fo=json`;
   const itemData = await fetchJson(itemUrl);
   const audioUrl = getAudioUrl(itemData);
@@ -155,6 +237,7 @@ async function buildYearCache(entry) {
     audioUrl,
     metadata: buildMetadata(itemData, entry.year, selectedItem),
     title: encodeURIComponent(itemId || itemData.title || String(entry.year)),
+    itemId,
     error: null,
     itemUids: entry.sampleItemIds
   }];
@@ -162,7 +245,7 @@ async function buildYearCache(entry) {
 
 async function main() {
   console.log('Fetching yearly archive catalog from the Library of Congress API...');
-  const catalogEntries = await fetchCatalogWithSamples();
+  const { entries: catalogEntries, pageCount } = await fetchCatalogWithSamples();
   const availableYears = catalogEntries.map((entry) => entry.year);
   const audioByYear = {};
 
@@ -177,12 +260,14 @@ async function main() {
   }
 
   const generatedAt = new Date().toISOString();
+  const source = buildSearchUrl(1);
   const payload = {
     generatedAt,
-    source: SEARCH_URL,
+    source,
     catalog: {
       generatedAt,
-      source: SEARCH_URL,
+      source,
+      pageCount,
       entries: catalogEntries.map(({ sampleItem, ...entry }) => entry)
     },
     availableYears,

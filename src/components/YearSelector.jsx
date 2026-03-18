@@ -11,6 +11,23 @@ function getYearDescription(option) {
   return 'Recordings available';
 }
 
+export function getNextEnabledYearIndex(options, currentIndex, direction) {
+  if (!Array.isArray(options) || options.length === 0) {
+    return -1;
+  }
+
+  let nextIndex = currentIndex;
+
+  do {
+    nextIndex += direction;
+    if (nextIndex < 0 || nextIndex >= options.length) {
+      return currentIndex;
+    }
+  } while (!options[nextIndex]?.hasRecordings);
+
+  return nextIndex;
+}
+
 export default function YearSelector() {
   const {
     year,
@@ -107,6 +124,43 @@ export default function YearSelector() {
     }
   }, [year, yearOptions]);
 
+  const handleKeyDown = (event, index, option) => {
+    if (!option.hasRecordings) {
+      return;
+    }
+
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown': {
+        event.preventDefault();
+        const nextIndex = getNextEnabledYearIndex(yearOptions, index, 1);
+        buttonRefs.current[nextIndex]?.focus();
+        if (nextIndex !== index) {
+          setYear(yearOptions[nextIndex].value);
+        }
+        break;
+      }
+      case 'ArrowLeft':
+      case 'ArrowUp': {
+        event.preventDefault();
+        const nextIndex = getNextEnabledYearIndex(yearOptions, index, -1);
+        buttonRefs.current[nextIndex]?.focus();
+        if (nextIndex !== index) {
+          setYear(yearOptions[nextIndex].value);
+        }
+        break;
+      }
+      case 'Enter':
+      case ' ': {
+        event.preventDefault();
+        setYear(option.value);
+        break;
+      }
+      default:
+        break;
+    }
+  };
+
   return (
     <div className="year-indicator-wrapper" style={{ position: 'relative' }}>
       <label className="sr-only" htmlFor="year-selector-mobile">Choose a recording year</label>
@@ -118,7 +172,7 @@ export default function YearSelector() {
         aria-label="Choose a recording year"
       >
         {yearOptions.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option key={option.value} value={option.value} disabled={!option.hasRecordings}>
             {option.label}
           </option>
         ))}
@@ -140,9 +194,10 @@ export default function YearSelector() {
             const title = `${option.value}: ${getYearDescription(option)}`;
 
             return (
-              <span
+              <button
                 key={option.value}
                 id={`year-option-${option.value}`}
+                type="button"
                 ref={(node) => {
                   buttonRefs.current[index] = node;
                 }}
@@ -153,17 +208,17 @@ export default function YearSelector() {
                     setYear(option.value);
                   }
                 }}
-                style={{
-                  opacity: isDisabled ? 0.45 : 1,
-                  cursor: isDisabled ? 'not-allowed' : 'pointer'
-                }}
+                onKeyDown={(event) => handleKeyDown(event, index, option)}
                 title={title}
                 role="option"
                 aria-selected={option.value === year}
                 aria-disabled={isDisabled}
+                disabled={isDisabled}
+                tabIndex={option.value === year ? 0 : -1}
               >
-                {option.value}
-              </span>
+                <span className="year-value">{option.value}</span>
+                <span className="year-meta">{getYearDescription(option)}</span>
+              </button>
             );
           })}
         </div>

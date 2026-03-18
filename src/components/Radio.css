@@ -125,6 +125,11 @@ body {
   text-decoration: none;
 }
 
+.empty-state,
+.metadata-transport {
+  padding: 0.75rem 1rem;
+}
+
 /* Year indicator and its inner elements */
 .year-indicator {
   width: 100%;
@@ -171,12 +176,22 @@ body {
   flex-direction: column;
   justify-content: center;
   gap: 0.15rem;
+  cursor: pointer;
+  box-shadow: none;
 }
 
 .year:hover,
 .year:focus-visible {
   border-color: #c7bd80;
   outline: none;
+}
+
+.year:focus-visible {
+  box-shadow: 0 0 0 2px #f6e79a;
+}
+
+.year:disabled {
+  cursor: not-allowed;
 }
 
 .year.active {
