@@ -32,10 +32,22 @@ function buildAvailableYearOptions(catalogEntries = []) {
 
 export default function Radio() {
   const controller = useRadioController();
-  const { audioUrl, isOn, volume, availableYears, initComplete, sessionStatus } = controller;
+  const {
+    audioUrl,
+    isOn,
+    volume,
+    availableYears,
+    catalogEntries,
+    catalogSource,
+    initComplete,
+    sessionStatus
+  } = controller;
   const { transportState } = useAudioManager(audioUrl, isOn, volume);
 
-  const catalog = useMemo(() => buildCatalog(availableYears), [availableYears]);
+  const catalog = useMemo(
+    () => (catalogEntries.length ? catalogEntries : buildCatalog(availableYears)),
+    [availableYears, catalogEntries]
+  );
   const availableYearOptions = useMemo(
     () => buildAvailableYearOptions(catalog),
     [catalog]
@@ -44,11 +56,11 @@ export default function Radio() {
   const contextValue = useMemo(() => ({
     ...controller,
     catalog,
-    catalogSource: 'derived-from-available-years',
+    catalogSource: catalogSource || 'derived-from-available-years',
     availableYearOptions,
-    isCatalogLoading: sessionStatus === 'booting',
+    isCatalogLoading: sessionStatus === 'booting' && catalog.length === 0,
     transportState,
-  }), [availableYearOptions, catalog, controller, sessionStatus, transportState]);
+  }), [availableYearOptions, catalog, catalogSource, controller, sessionStatus, transportState]);
 
   if (!initComplete) {
     return <div className="radio-loading">Loading…</div>;

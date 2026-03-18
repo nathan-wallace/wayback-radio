@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import {
   fetchAvailableYears,
   fetchAudioByYear,
-  fetchAudioById
+  fetchAudioById,
+  mergeCatalogYearEntry
 } from '../services/AudioService';
 
 const initialState = {
@@ -12,6 +13,9 @@ const initialState = {
   isOn: false,
   metadata: null,
   availableYears: [],
+  catalogEntries: [],
+  catalogSource: null,
+  catalogGeneratedAt: null,
   itemUids: [],
   itemIndex: 0,
   sessionStatus: 'booting',
@@ -37,6 +41,21 @@ function radioReducer(state, action) {
           ? action.payload(state.availableYears)
           : action.payload
       };
+    case 'SET_CATALOG': {
+      const nextCatalog = typeof action.payload === 'function'
+        ? action.payload({
+          entries: state.catalogEntries,
+          source: state.catalogSource,
+          generatedAt: state.catalogGeneratedAt
+        })
+        : action.payload;
+      return {
+        ...state,
+        catalogEntries: nextCatalog?.entries || [],
+        catalogSource: nextCatalog?.source || null,
+        catalogGeneratedAt: nextCatalog?.generatedAt || null
+      };
+    }
     case 'SET_ITEM_UIDS':
       return { ...state, itemUids: action.payload };
     case 'SET_ITEM_INDEX':
@@ -90,6 +109,9 @@ export function useRadioController() {
     isOn,
     metadata,
     availableYears,
+    catalogEntries,
+    catalogSource,
+    catalogGeneratedAt,
     itemUids,
     itemIndex,
     sessionStatus,
@@ -108,6 +130,7 @@ export function useRadioController() {
   const setIsOn = useCallback((nextIsOn) => dispatch({ type: 'SET_IS_ON', payload: nextIsOn }), []);
   const setMetadata = useCallback((nextMetadata) => dispatch({ type: 'SET_METADATA', payload: nextMetadata }), []);
   const setAvailableYears = useCallback((yearsOrUpdater) => dispatch({ type: 'SET_AVAILABLE_YEARS', payload: yearsOrUpdater }), []);
+  const setCatalog = useCallback((payload) => dispatch({ type: 'SET_CATALOG', payload }), []);
   const setItemUids = useCallback((uids) => dispatch({ type: 'SET_ITEM_UIDS', payload: uids }), []);
   const setItemIndex = useCallback((index) => dispatch({ type: 'SET_ITEM_INDEX', payload: index }), []);
   const setSessionStatus = useCallback((nextStatus) => dispatch({ type: 'SET_SESSION_STATUS', payload: nextStatus }), []);
@@ -212,7 +235,13 @@ export function useRadioController() {
     const requestId = ++yearsRequestRef.current;
 
     async function loadYears() {
-      const { years, error: yearsError } = await fetchAvailableYears();
+      const {
+        years,
+        entries = [],
+        source = null,
+        generatedAt = null,
+        error: yearsError
+      } = await fetchAvailableYears();
       if (requestId !== yearsRequestRef.current) {
         return;
       }
@@ -220,6 +249,8 @@ export function useRadioController() {
       if (yearsError) {
         setError(yearsError);
       }
+
+      setCatalog({ entries, source, generatedAt });
 
       if (years?.length) {
         setAvailableYears(years);
@@ -229,7 +260,7 @@ export function useRadioController() {
     }
 
     loadYears();
-  }, [setAvailableYears, setError, setSessionStatus]);
+  }, [setAvailableYears, setCatalog, setError, setSessionStatus]);
 
   useEffect(() => {
     if (availableYears.length === 0 || initHandledRef.current) {
@@ -246,6 +277,11 @@ export function useRadioController() {
           initYear = urlYear;
           if (!availableYears.includes(urlYear)) {
             setAvailableYears((prev) => [...prev, urlYear].sort((a, b) => a - b));
+            setCatalog((prev) => ({
+              entries: mergeCatalogYearEntry(prev?.entries, urlYear, { itemCount: null, status: 'manifest' }),
+              source: prev?.source || null,
+              generatedAt: prev?.generatedAt || null
+            }));
           }
         }
       }
@@ -263,6 +299,11 @@ export function useRadioController() {
           if (Number.isFinite(metadataYear)) {
             if (!availableYears.includes(metadataYear)) {
               setAvailableYears((prev) => [...prev, metadataYear].sort((a, b) => a - b));
+              setCatalog((prev) => ({
+                entries: mergeCatalogYearEntry(prev?.entries, metadataYear, { itemCount: null, status: 'manifest' }),
+                source: prev?.source || null,
+                generatedAt: prev?.generatedAt || null
+              }));
             }
             dispatch({ type: 'SET_YEAR', payload: metadataYear });
           }
@@ -286,6 +327,7 @@ export function useRadioController() {
     loadAudioById,
     loadYearAudio,
     setAvailableYears,
+    setCatalog,
     setIsOn
   ]);
 
@@ -339,6 +381,9 @@ export function useRadioController() {
     setMetadata,
     availableYears,
     setAvailableYears,
+    catalogEntries,
+    catalogSource,
+    catalogGeneratedAt,
     itemUids,
     setItemUids,
     itemIndex,
@@ -357,6 +402,9 @@ export function useRadioController() {
   }), [
     audioUrl,
     availableYears,
+    catalogEntries,
+    catalogGeneratedAt,
+    catalogSource,
     error,
     initComplete,
     isOn,
