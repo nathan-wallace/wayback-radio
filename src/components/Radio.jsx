@@ -1,19 +1,8 @@
 // Radio.jsx
-import React, {
-  useReducer,
-  useEffect,
-  useRef,
-  useCallback,
-  useMemo,
-  useState
-} from 'react';
+import React, { useMemo } from 'react';
 import { RadioContext } from '../context/RadioContext';
-import {
-  fetchAvailableYears,
-  fetchAudioByYear,
-  fetchAudioById
-} from '../services/AudioService';
 import { useAudioManager } from '../hooks/useAudioManager';
+import { useRadioController } from '../hooks/useRadioController';
 import DisplayScreen from './DisplayScreen';
 import ItemNavigator from './ItemNavigator';
 import Button from './Button';
@@ -410,7 +399,7 @@ export default function Radio() {
             <Button />
           </div>
         </div>
-      </RadioContext.Provider>
-    )
+      </div>
+    </RadioContext.Provider>
   );
 }
