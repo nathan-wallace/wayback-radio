@@ -2,7 +2,9 @@
   "name": "wayback-radio",
   "version": "1.0.0",
   "scripts": {
+    "predev": "node scripts/materialize-static-dataset.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/materialize-static-dataset.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "test": "jest",

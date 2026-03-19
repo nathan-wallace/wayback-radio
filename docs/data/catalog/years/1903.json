@@ -1,0 +1,21 @@
+{
+  "year": 1903,
+  "generatedAt": "2026-03-19T00:00:00.000Z",
+  "source": "bootstrap-fallback-seed",
+  "items": [
+    {
+      "uid": "100010968",
+      "normalizedUid": "100010968",
+      "routeId": "ihas.100010968",
+      "title": "I hear America singing",
+      "date": "1903",
+      "contributor": "Whitman, Walt, 1819-1892, Billy Collins, b. 1941",
+      "hasPlayableAudio": true,
+      "selectionKeys": [
+        "100010968",
+        "i hear america singing"
+      ],
+      "order": 0
+    }
+  ]
+}

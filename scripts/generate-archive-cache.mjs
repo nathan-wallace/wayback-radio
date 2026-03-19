@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -28,6 +29,7 @@ const MAX_BOOTSTRAP_AUDIO_YEARS = 6;
 const FEATURED_BOOTSTRAP_YEARS = [1903, 1917, 1942, 1952, 1970, 1978];
 const FALLBACK_SEED = {
   generatedAt: '2026-03-19T00:00:00.000Z',
+  manifestVersion: 'fallback-seed-v1',
   source: 'bootstrap-manifest',
   sourceMetadata: {
     generator: 'scripts/generate-archive-cache.mjs',
@@ -378,8 +380,18 @@ function pickBootstrapAudioEntries(catalogEntries) {
 
 function buildPayload({ catalogEntries, pageCount, audioByYear, generatedAt, source, sourceMetadata }) {
   const availableYears = catalogEntries.map((entry) => entry.year);
+  const manifestVersion = createHash('sha256')
+    .update(JSON.stringify({
+      source,
+      catalogEntries: catalogEntries.map(({ sampleItem, ...entry }) => entry),
+      availableYears,
+      audioByYear,
+    }))
+    .digest('hex')
+    .slice(0, 16);
   return {
     generatedAt,
+    manifestVersion,
     source,
     sourceMetadata,
     catalog: {

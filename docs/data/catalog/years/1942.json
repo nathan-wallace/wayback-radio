@@ -1,0 +1,21 @@
+{
+  "year": 1942,
+  "generatedAt": "2026-03-19T00:00:00.000Z",
+  "source": "bootstrap-fallback-seed",
+  "items": [
+    {
+      "uid": "200197221",
+      "normalizedUid": "200197221",
+      "routeId": "ihas.200197221",
+      "title": "The night herding song",
+      "date": "1942",
+      "contributor": "Stephens, Harry, Lomax, John A. (John Avery)",
+      "hasPlayableAudio": true,
+      "selectionKeys": [
+        "200197221",
+        "the night herding song"
+      ],
+      "order": 0
+    }
+  ]
+}

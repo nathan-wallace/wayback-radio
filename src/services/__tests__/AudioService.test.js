@@ -1,6 +1,18 @@
 import { __testing as audioServiceTesting, CURRENT_DATASET_VERSION, fetchAudioByYear, fetchAudioById, fetchAvailableYears, fetchYearManifest } from '../AudioService';
 import { __testing as offlineStoreTesting, saveYearSelection } from '../offlineStore';
 
+function createJsonResponse(payload, { ok = true, status = 200 } = {}) {
+  return {
+    ok,
+    status,
+    json: async () => payload,
+  };
+}
+
+function notFoundResponse() {
+  return createJsonResponse({}, { ok: false, status: 404 });
+}
+
 function createSearchItem({ id, year, title, audio = true }) {
   return {
     id: `https://www.loc.gov/item/${id}/`,
@@ -37,90 +49,101 @@ async function flushAsyncWork() {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function mockLocSearchAndItem({ results, item }) {
+  global.fetch.mockImplementation(async (url) => {
+    if (String(url).includes('/data/')) {
+      return notFoundResponse();
+    }
+
+    if (String(url).includes('/search/')) {
+      return createJsonResponse({ results });
+    }
+
+    if (String(url).includes('/item/')) {
+      return createJsonResponse(item);
+    }
+
+    throw new Error(`Unexpected URL: ${url}`);
+  });
+}
+
 describe('fetchAudioByYear', () => {
   beforeEach(async () => {
     window.history.replaceState({}, '', 'http://localhost/');
     delete global.__WAYBACK_ENABLE_BOOTSTRAP_AUTO_REFRESH__;
     jest.restoreAllMocks();
-    global.fetch = jest.fn();
+    global.fetch = jest.fn().mockImplementation(async () => notFoundResponse());
     audioServiceTesting.resetCaches();
     await offlineStoreTesting.resetOfflineStore();
     localStorage.clear();
   });
 
   it('filters playable candidates to the requested year before selecting an item', async () => {
-    global.fetch
-      .mockResolvedValueOnce({
-        json: async () => ({
-          results: [
-            createSearchItem({ id: 'mismatch-1981', year: 1981, title: 'Wrong year first' }),
-            createSearchItem({ id: 'match-1980', year: 1980, title: 'Correct year second' })
-          ]
-        })
-      })
-      .mockResolvedValueOnce({
-        json: async () => createItemPayload({ id: 'match-1980', year: 1980, title: 'Correct year second' })
-      });
+    mockLocSearchAndItem({
+      results: [
+        createSearchItem({ id: 'mismatch-1981', year: 1981, title: 'Wrong year first' }),
+        createSearchItem({ id: 'match-1980', year: 1980, title: 'Correct year second' })
+      ],
+      item: createItemPayload({ id: 'match-1980', year: 1980, title: 'Correct year second' })
+    });
 
     const result = await fetchAudioByYear(1980);
 
     expect(result.error).toBeNull();
     expect(result.metadata.title).toBe('Correct year second');
     expect(result.metadata.date).toBe('1980');
-    expect(global.fetch.mock.calls[1][0]).toContain('/item/match-1980/');
+    expect(global.fetch.mock.calls.at(-1)[0]).toContain('/item/match-1980/');
   });
 
   it('prefers an exact requested identity match within the requested year', async () => {
-    global.fetch
-      .mockResolvedValueOnce({
-        json: async () => ({
-          results: [
-            createSearchItem({ id: 'default-1980', year: 1980, title: 'Default Choice' }),
-            createSearchItem({ id: 'special-1980', year: 1980, title: 'Special Match Title' })
-          ]
-        })
-      })
-      .mockResolvedValueOnce({
-        json: async () => createItemPayload({ id: 'special-1980', year: 1980, title: 'Special Match Title' })
-      });
+    mockLocSearchAndItem({
+      results: [
+        createSearchItem({ id: 'default-1980', year: 1980, title: 'Default Choice' }),
+        createSearchItem({ id: 'special-1980', year: 1980, title: 'Special Match Title' })
+      ],
+      item: createItemPayload({ id: 'special-1980', year: 1980, title: 'Special Match Title' })
+    });
 
     const result = await fetchAudioByYear(1980, 'Special%20Match%20Title');
 
     expect(result.error).toBeNull();
     expect(result.metadata.title).toBe('Special Match Title');
     expect(result.itemId).toBe('special-1980');
-    expect(global.fetch.mock.calls[1][0]).toContain('/item/special-1980/');
+    expect(global.fetch.mock.calls.at(-1)[0]).toContain('/item/special-1980/');
   });
 
   it('falls back deterministically to the first playable match for the year when no identity matches', async () => {
-    global.fetch
-      .mockResolvedValueOnce({
-        json: async () => ({
-          results: [
-            createSearchItem({ id: 'first-1980', year: 1980, title: 'First playable' }),
-            createSearchItem({ id: 'second-1980', year: 1980, title: 'Second playable' })
-          ]
-        })
-      })
-      .mockResolvedValueOnce({
-        json: async () => createItemPayload({ id: 'first-1980', year: 1980, title: 'First playable' })
-      });
+    mockLocSearchAndItem({
+      results: [
+        createSearchItem({ id: 'first-1980', year: 1980, title: 'First playable' }),
+        createSearchItem({ id: 'second-1980', year: 1980, title: 'Second playable' })
+      ],
+      item: createItemPayload({ id: 'first-1980', year: 1980, title: 'First playable' })
+    });
 
     const result = await fetchAudioByYear(1980, 'Missing%20Identity');
 
     expect(result.error).toBeNull();
     expect(result.metadata.title).toBe('First playable');
-    expect(global.fetch.mock.calls[1][0]).toContain('/item/first-1980/');
+    expect(global.fetch.mock.calls.at(-1)[0]).toContain('/item/first-1980/');
   });
 
 
   it('can defer item-detail requests until playback time while preserving the selected route id', async () => {
-    global.fetch.mockResolvedValueOnce({
-      json: async () => ({
-        results: [
-          createSearchItem({ id: 'deferred-1980', year: 1980, title: 'Deferred Choice' })
-        ]
-      })
+    global.fetch.mockImplementation(async (url) => {
+      if (String(url).includes('/data/')) {
+        return notFoundResponse();
+      }
+
+      if (String(url).includes('/search/')) {
+        return createJsonResponse({
+          results: [
+            createSearchItem({ id: 'deferred-1980', year: 1980, title: 'Deferred Choice' })
+          ]
+        });
+      }
+
+      throw new Error(`Unexpected URL: ${url}`);
     });
 
     const result = await fetchAudioByYear(1980, null, { deferAudio: true });
@@ -130,7 +153,7 @@ describe('fetchAudioByYear', () => {
     expect(result.itemId).toBe('deferred-1980');
     expect(result.metadata.title).toBe('Deferred Choice');
     expect(result.source).toBe('loc-search-selection');
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch.mock.calls.filter(([url]) => !String(url).includes('/data/'))).toHaveLength(1);
   });
 
   it('falls back to stale cached audio when the network request fails', async () => {
@@ -160,7 +183,13 @@ describe('fetchAudioByYear', () => {
       }
     );
 
-    global.fetch.mockRejectedValue(new Error('network down'));
+    global.fetch.mockImplementation(async (url) => {
+      if (String(url).includes('/data/')) {
+        return notFoundResponse();
+      }
+
+      throw new Error('network down');
+    });
 
     const result = await fetchAudioByYear(1980);
 
@@ -168,6 +197,56 @@ describe('fetchAudioByYear', () => {
     expect(result.source).toBe('stale-year-cache');
     expect(result.audioUrl).toBe('https://cdn.example/stale.mp3');
     expect(result.metadata.title).toBe('Cached Result');
+  });
+
+  it('prefers the materialized static dataset before falling back to LOC search', async () => {
+    global.fetch.mockImplementation(async (url) => {
+      if (String(url).endsWith('/data/catalog/years/1980.json')) {
+        return createJsonResponse({
+          year: 1980,
+          generatedAt: '2026-03-19T00:00:00.000Z',
+          source: 'static-dataset-year-manifest',
+          items: [
+            {
+              uid: '1980-a',
+              normalizedUid: '1980-a',
+              routeId: 'static-1980-a',
+              title: 'Static Dataset Choice',
+              date: '1980',
+              contributor: 'Static Source',
+              hasPlayableAudio: true,
+              selectionKeys: ['static dataset choice', 'static-1980-a'],
+              order: 0,
+            }
+          ]
+        });
+      }
+
+      if (String(url).endsWith('/data/items/static-1980-a.json')) {
+        return createJsonResponse({
+          audioUrl: 'https://cdn.example/static-1980-a.mp3',
+          metadata: {
+            title: 'Static Dataset Choice',
+            date: '1980',
+            uid: '1980-a',
+            contributor: 'Static Source',
+          },
+          itemId: 'static-1980-a',
+          source: 'static-dataset-item'
+        });
+      }
+
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const result = await fetchAudioByYear(1980);
+
+    expect(result.error ?? null).toBeNull();
+    expect(result.source).toBe('static-dataset-item');
+    expect(result.metadata.title).toBe('Static Dataset Choice');
+    expect(result.itemRouteIds).toEqual(['static-1980-a']);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch.mock.calls.every(([url]) => String(url).includes('/data/'))).toBe(true);
   });
 });
 
@@ -180,21 +259,29 @@ describe('fetchYearManifest', () => {
     window.history.replaceState({}, '', 'http://localhost/');
     delete global.__WAYBACK_ENABLE_BOOTSTRAP_AUTO_REFRESH__;
     jest.restoreAllMocks();
-    global.fetch = jest.fn();
+    global.fetch = jest.fn().mockImplementation(async () => notFoundResponse());
     audioServiceTesting.resetCaches();
     await offlineStoreTesting.resetOfflineStore();
     localStorage.clear();
   });
 
   it('returns ordered route ids, normalized uids, and the selected identity for the requested year', async () => {
-    global.fetch.mockResolvedValueOnce({
-      json: async () => ({
-        results: [
-          createSearchItem({ id: 'default-1980', year: 1980, title: 'Default Choice' }),
-          createSearchItem({ id: 'special-1980', year: 1980, title: 'Special Match Title' }),
-          createSearchItem({ id: 'other-1979', year: 1979, title: 'Wrong year' })
-        ]
-      })
+    global.fetch.mockImplementation(async (url) => {
+      if (String(url).includes('/data/')) {
+        return notFoundResponse();
+      }
+
+      if (String(url).includes('/search/')) {
+        return createJsonResponse({
+          results: [
+            createSearchItem({ id: 'default-1980', year: 1980, title: 'Default Choice' }),
+            createSearchItem({ id: 'special-1980', year: 1980, title: 'Special Match Title' }),
+            createSearchItem({ id: 'other-1979', year: 1979, title: 'Wrong year' })
+          ]
+        });
+      }
+
+      throw new Error(`Unexpected URL: ${url}`);
     });
 
     const manifest = await fetchYearManifest(1980, 'Special%20Match%20Title');
@@ -213,13 +300,21 @@ describe('fetchYearManifest', () => {
   });
 
   it('falls back to the first playable item when the requested identity does not match', async () => {
-    global.fetch.mockResolvedValueOnce({
-      json: async () => ({
-        results: [
-          createSearchItem({ id: 'first-1980', year: 1980, title: 'First playable' }),
-          createSearchItem({ id: 'second-1980', year: 1980, title: 'Second playable' })
-        ]
-      })
+    global.fetch.mockImplementation(async (url) => {
+      if (String(url).includes('/data/')) {
+        return notFoundResponse();
+      }
+
+      if (String(url).includes('/search/')) {
+        return createJsonResponse({
+          results: [
+            createSearchItem({ id: 'first-1980', year: 1980, title: 'First playable' }),
+            createSearchItem({ id: 'second-1980', year: 1980, title: 'Second playable' })
+          ]
+        });
+      }
+
+      throw new Error(`Unexpected URL: ${url}`);
     });
 
     const manifest = await fetchYearManifest(1980, 'Missing%20Identity');
@@ -227,6 +322,52 @@ describe('fetchYearManifest', () => {
     expect(manifest.itemRouteIds).toEqual(['first-1980', 'second-1980']);
     expect(manifest.selectedItemIdentity).toBe('first-1980');
     expect(manifest.selectedIndex).toBe(0);
+  });
+
+  it('uses the materialized year manifest when it exists', async () => {
+    global.fetch.mockImplementation(async (url) => {
+      if (String(url).endsWith('/data/catalog/years/1980.json')) {
+        return createJsonResponse({
+          year: 1980,
+          generatedAt: '2026-03-19T00:00:00.000Z',
+          source: 'static-dataset-year-manifest',
+          items: [
+            {
+              uid: 'static-one',
+              normalizedUid: 'static-one',
+              routeId: 'static-one',
+              title: 'Static One',
+              date: '1980',
+              contributor: 'Static',
+              hasPlayableAudio: true,
+              selectionKeys: ['static one', 'static-one'],
+              order: 0,
+            },
+            {
+              uid: 'static-two',
+              normalizedUid: 'static-two',
+              routeId: 'static-two',
+              title: 'Static Two',
+              date: '1980',
+              contributor: 'Static',
+              hasPlayableAudio: true,
+              selectionKeys: ['static two', 'static-two'],
+              order: 1,
+            }
+          ]
+        });
+      }
+
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const manifest = await fetchYearManifest(1980, 'static-two');
+
+    expect(manifest.itemRouteIds).toEqual(['static-one', 'static-two']);
+    expect(manifest.itemUids).toEqual(['static-one', 'static-two']);
+    expect(manifest.selectedItemIdentity).toBe('static-two');
+    expect(manifest.source).toBe('static-dataset-year-manifest');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -255,8 +396,12 @@ describe('available years normalization', () => {
 
   it('treats numeric-keyed resource collections as playable when fetching available years', async () => {
     jest.restoreAllMocks();
-    global.fetch = jest.fn().mockResolvedValue({
-      json: async () => ({
+    global.fetch = jest.fn().mockImplementation(async (url) => {
+      if (String(url).includes('/data/')) {
+        return notFoundResponse();
+      }
+
+      return createJsonResponse({
         results: [
           {
             id: 'https://www.loc.gov/item/numeric-keys/',
@@ -275,7 +420,7 @@ describe('available years normalization', () => {
           }
         ],
         pagination: { total: 1, per_page: 100 }
-      })
+      });
     });
 
     audioServiceTesting.resetCaches();
@@ -299,6 +444,38 @@ describe('available years normalization', () => {
       status: 'ready'
     });
   });
+
+  it('loads the catalog from the materialized static dataset when available', async () => {
+    jest.restoreAllMocks();
+    global.fetch = jest.fn().mockImplementation(async (url) => {
+      if (String(url).endsWith('/data/catalog.json')) {
+        return createJsonResponse({
+          generatedAt: '2026-03-19T00:00:00.000Z',
+          source: 'static-dataset-catalog',
+          entries: [
+            { year: 1933, itemCount: 2, sampleItemIds: ['a', 'b'], status: 'ready' }
+          ]
+        });
+      }
+
+      if (String(url).endsWith('/data/manifest.json')) {
+        return notFoundResponse();
+      }
+
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    audioServiceTesting.resetCaches();
+    await offlineStoreTesting.resetOfflineStore();
+    localStorage.clear();
+
+    const result = await fetchAvailableYears();
+
+    expect(result.error).toBeNull();
+    expect(result.source).toBe('static-dataset-catalog');
+    expect(result.years).toEqual([1933]);
+    expect(global.fetch.mock.calls.every(([url]) => String(url).includes('/data/'))).toBe(true);
+  });
 });
 
 describe('bootstrap manifest behavior', () => {
@@ -306,28 +483,32 @@ describe('bootstrap manifest behavior', () => {
     window.history.replaceState({}, '', 'http://localhost/');
     delete global.__WAYBACK_ENABLE_BOOTSTRAP_AUTO_REFRESH__;
     jest.restoreAllMocks();
-    global.fetch = jest.fn();
+    global.fetch = jest.fn().mockImplementation(async () => notFoundResponse());
     audioServiceTesting.resetCaches();
     await offlineStoreTesting.resetOfflineStore();
     localStorage.clear();
   });
 
   it('returns the bootstrap catalog first and refreshes it in the background', async () => {
-    global.fetch.mockResolvedValue({
-      json: async () => ({
+    global.fetch.mockImplementation(async (url) => {
+      if (String(url).includes('/data/')) {
+        return notFoundResponse();
+      }
+
+      return createJsonResponse({
         results: [
           createSearchItem({ id: 'refreshed-1942', year: 1942, title: 'Refreshed 1942' }),
           createSearchItem({ id: 'refreshed-1970', year: 1970, title: 'Refreshed 1970' })
         ],
         pagination: { total: 2, per_page: 100 }
-      })
+      });
     });
 
     const initial = await fetchAvailableYears();
 
     expect(initial.bootstrap).toBe(true);
     expect(initial.entries.length).toBeGreaterThan(0);
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch.mock.calls.some(([url]) => String(url).includes('/search/'))).toBe(true);
 
     await flushAsyncWork();
 
@@ -348,17 +529,12 @@ describe('bootstrap manifest behavior', () => {
   });
 
   it('uses bootstrap audio as a startup optimization and replaces it after the background refresh completes', async () => {
-    global.fetch
-      .mockResolvedValueOnce({
-        json: async () => ({
-          results: [
-            createSearchItem({ id: 'refreshed-1942', year: 1942, title: 'Refreshed 1942' })
-          ]
-        })
-      })
-      .mockResolvedValueOnce({
-        json: async () => createItemPayload({ id: 'refreshed-1942', year: 1942, title: 'Refreshed 1942' })
-      });
+    mockLocSearchAndItem({
+      results: [
+        createSearchItem({ id: 'refreshed-1942', year: 1942, title: 'Refreshed 1942' })
+      ],
+      item: createItemPayload({ id: 'refreshed-1942', year: 1942, title: 'Refreshed 1942' })
+    });
 
     const initial = await fetchAudioByYear(1942);
 
@@ -386,11 +562,17 @@ describe('bootstrap manifest behavior', () => {
 
     await flushAsyncWork();
 
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(global.fetch.mock.calls.every(([url]) => String(url).includes('/data/'))).toBe(true);
   });
 
-  it('stops retrying live LOC refreshes after a CORS-style fetch failure', async () => {
-    global.fetch.mockRejectedValue(new TypeError('Failed to fetch'));
+  it('waits for repeated CORS-style LOC failures before entering the temporary cooldown', async () => {
+    global.fetch.mockImplementation(async (url) => {
+      if (String(url).includes('/data/')) {
+        return notFoundResponse();
+      }
+
+      throw new TypeError('Failed to fetch');
+    });
 
     const firstCatalog = await fetchAvailableYears();
 
@@ -399,7 +581,7 @@ describe('bootstrap manifest behavior', () => {
     await flushAsyncWork();
 
     expect(audioServiceTesting.getLocApiState()).toMatchObject({
-      unavailable: true,
+      consecutiveFailures: 1,
       reason: 'cors-or-network'
     });
 
@@ -411,7 +593,11 @@ describe('bootstrap manifest behavior', () => {
 
     await flushAsyncWork();
 
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(global.fetch.mock.calls.some(([url]) => String(url).includes('/search/'))).toBe(true);
+    expect(audioServiceTesting.getLocApiState()).toMatchObject({
+      consecutiveFailures: 2,
+      reason: 'cors-or-network'
+    });
   });
 });
 
@@ -428,8 +614,12 @@ describe('fetchAudioById', () => {
   });
 
   it('requests non-UID route ids from the LOC item endpoint without forcing an ihas prefix', async () => {
-    global.fetch.mockResolvedValueOnce({
-      json: async () => createItemPayload({ id: 'route-only-1980', year: 1980, title: 'Route Based Item' })
+    global.fetch.mockImplementation(async (url) => {
+      if (String(url).includes('/data/')) {
+        return notFoundResponse();
+      }
+
+      return createJsonResponse(createItemPayload({ id: 'route-only-1980', year: 1980, title: 'Route Based Item' }));
     });
 
     const result = await fetchAudioById('route-only-1980');
@@ -437,6 +627,6 @@ describe('fetchAudioById', () => {
     expect(result.error).toBeNull();
     expect(result.itemId).toBe('route-only-1980');
     expect(result.metadata.title).toBe('Route Based Item');
-    expect(global.fetch).toHaveBeenCalledWith('https://www.loc.gov/item/route-only-1980/?fo=json');
+    expect(global.fetch.mock.calls.at(-1)[0]).toBe('https://www.loc.gov/item/route-only-1980/?fo=json');
   });
 });

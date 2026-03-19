@@ -1,0 +1,46 @@
+{
+  "audioUrl": "https://www.loc.gov/resource/ihas.200196565.0",
+  "metadata": {
+    "title": "Deep Down in My Heart",
+    "date": "1978",
+    "url": "https://www.loc.gov/item/ihas.200196565",
+    "uid": "200196565",
+    "contributor": "Gordon, Robert Winslow, Givens, W. M.",
+    "summary": "Bootstrap seed representing the Robert Winslow Gordon Collection release.",
+    "genre": "sound recording",
+    "recordingInfo": "1978 · sound recording",
+    "image": null,
+    "notes": [
+      "Source: Published in 1978 in commemoration of the 50th anniversary of the Archive of Folk Culture.",
+      "Date: March 19, 1926."
+    ],
+    "repository": "american folklife center",
+    "aka": [],
+    "relatedResources": [],
+    "formats": [],
+    "location": "Georgia, United States",
+    "mimeType": "audio",
+    "source": [
+      {
+        "label": "https://www.loc.gov/item/ihas.200196565",
+        "url": "https://www.loc.gov/item/ihas.200196565"
+      }
+    ],
+    "technicalDetails": [
+      {
+        "label": "UID",
+        "value": "200196565"
+      },
+      {
+        "label": "Mime Type",
+        "value": "audio"
+      }
+    ]
+  },
+  "title": "ihas.200196565",
+  "itemId": "ihas.200196565",
+  "error": null,
+  "itemUids": [
+    "200196565"
+  ]
+}

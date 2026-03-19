@@ -1,0 +1,21 @@
+{
+  "year": 1970,
+  "generatedAt": "2026-03-19T00:00:00.000Z",
+  "source": "bootstrap-fallback-seed",
+  "items": [
+    {
+      "uid": "200196384",
+      "normalizedUid": "200196384",
+      "routeId": "ihas.200196384",
+      "title": "Jesus Leads Me All the Way",
+      "date": "1970",
+      "contributor": "Yurchenco, Henrietta, Goodwin",
+      "hasPlayableAudio": true,
+      "selectionKeys": [
+        "200196384",
+        "jesus leads me all the way"
+      ],
+      "order": 0
+    }
+  ]
+}
