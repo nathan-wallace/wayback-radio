@@ -8,6 +8,7 @@ import {
 
 const FILTERS_KEY = 'active-filters';
 const SYNC_STATE_KEY = 'app-sync-state';
+const DATASET_VERSION_KEY = 'dataset-version';
 const ENTITY_PREFIX = 'entity:';
 
 export const DEFAULT_FILTERS = {
@@ -23,6 +24,7 @@ export const DEFAULT_SYNC_STATE = {
   online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
   lastSuccessfulSync: null,
   pendingRefresh: false,
+  datasetVersion: null,
 };
 
 function clone(value) {
@@ -78,11 +80,18 @@ export function normalizeOfflineFilters(filters = {}) {
   };
 }
 
+function normalizeDatasetVersion(value) {
+  if (value == null || value === '') return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
 function normalizeSyncState(syncState = {}) {
   return {
     online: normalizeBoolean(syncState?.online, DEFAULT_SYNC_STATE.online),
     lastSuccessfulSync: normalizeTimestamp(syncState?.lastSuccessfulSync),
     pendingRefresh: normalizeBoolean(syncState?.pendingRefresh, DEFAULT_SYNC_STATE.pendingRefresh),
+    datasetVersion: normalizeDatasetVersion(syncState?.datasetVersion),
   };
 }
 
@@ -110,6 +119,21 @@ function normalizeEntityFreshness(record = {}) {
     fetchedAt: normalizeTimestamp(record.fetchedAt),
     expiresAt: normalizeTimestamp(record.expiresAt),
     lastPlayedAt: normalizeTimestamp(record.lastPlayedAt),
+    datasetVersion: normalizeDatasetVersion(record.datasetVersion),
+  };
+}
+
+function normalizeDatasetVersionRecord(record = {}) {
+  if (record?.key !== DATASET_VERSION_KEY) {
+    return null;
+  }
+
+  return {
+    key: DATASET_VERSION_KEY,
+    version: normalizeDatasetVersion(record.version ?? record.datasetVersion),
+    fetchedAt: normalizeTimestamp(record.fetchedAt),
+    appliedAt: normalizeTimestamp(record.appliedAt),
+    lastSuccessfulSync: normalizeTimestamp(record.lastSuccessfulSync),
   };
 }
 
@@ -309,11 +333,53 @@ export async function saveSyncState(nextSyncState) {
   return normalized;
 }
 
-export async function recordSuccessfulSync(timestamp = Date.now()) {
-  return saveSyncState({
+export async function getDatasetVersion() {
+  const record = await idbGet(OFFLINE_STORES.syncMeta, DATASET_VERSION_KEY);
+  return normalizeDatasetVersionRecord(record);
+}
+
+export async function saveDatasetVersion(nextVersion, updates = {}) {
+  const existing = await getDatasetVersion();
+  const normalizedVersion = normalizeDatasetVersion(nextVersion ?? updates?.version ?? updates?.datasetVersion);
+  const nextRecord = normalizeDatasetVersionRecord({
+    ...existing,
+    ...updates,
+    key: DATASET_VERSION_KEY,
+    version: normalizedVersion,
+    datasetVersion: normalizedVersion,
+    fetchedAt: normalizeTimestamp(updates?.fetchedAt ?? existing?.fetchedAt ?? Date.now()),
+    appliedAt: normalizeTimestamp(updates?.appliedAt ?? existing?.appliedAt ?? Date.now()),
+    lastSuccessfulSync: normalizeTimestamp(updates?.lastSuccessfulSync ?? existing?.lastSuccessfulSync),
+  });
+
+  await idbPut(OFFLINE_STORES.syncMeta, {
+    key: DATASET_VERSION_KEY,
+    version: nextRecord?.version ?? null,
+    datasetVersion: nextRecord?.version ?? null,
+    fetchedAt: nextRecord?.fetchedAt ?? null,
+    appliedAt: nextRecord?.appliedAt ?? null,
+    lastSuccessfulSync: nextRecord?.lastSuccessfulSync ?? null,
+  });
+
+  return nextRecord;
+}
+
+export async function recordSuccessfulSync(timestamp = Date.now(), datasetVersion = null) {
+  const normalizedVersion = normalizeDatasetVersion(datasetVersion);
+  const syncState = await saveSyncState({
     lastSuccessfulSync: timestamp,
     pendingRefresh: false,
+    ...(normalizedVersion ? { datasetVersion: normalizedVersion } : {}),
   });
+
+  if (normalizedVersion) {
+    await saveDatasetVersion(normalizedVersion, {
+      appliedAt: timestamp,
+      lastSuccessfulSync: timestamp,
+    });
+  }
+
+  return syncState;
 }
 
 export async function setPendingRefresh(pendingRefresh) {
@@ -339,6 +405,7 @@ export async function saveEntityFreshness(entityKey, updates = {}) {
     fetchedAt: normalizeTimestamp(updates?.fetchedAt ?? existing?.fetchedAt),
     expiresAt: normalizeTimestamp(updates?.expiresAt ?? existing?.expiresAt),
     lastPlayedAt: normalizeTimestamp(updates?.lastPlayedAt ?? existing?.lastPlayedAt),
+    datasetVersion: normalizeDatasetVersion(updates?.datasetVersion ?? existing?.datasetVersion),
   };
 
   await idbPut(OFFLINE_STORES.syncMeta, nextRecord);
@@ -352,11 +419,12 @@ export async function touchLastPlayed(entityKey, timestamp = Date.now()) {
 }
 
 export async function getOfflineStateSnapshot() {
-  const [favoriteState, filters, sync, freshnessByEntity] = await Promise.all([
+  const [favoriteState, filters, sync, freshnessByEntity, datasetVersion] = await Promise.all([
     getFavorites(),
     getActiveFilters(),
     getSyncState(),
     getEntityFreshness(),
+    getDatasetVersion(),
   ]);
 
   return {
@@ -364,11 +432,13 @@ export async function getOfflineStateSnapshot() {
     filters,
     sync,
     freshnessByEntity,
+    datasetVersion,
   };
 }
 
 export const __testing = {
   normalizeFavoriteRecord,
+  normalizeDatasetVersion,
   normalizeSyncState,
   normalizeStableId,
 };

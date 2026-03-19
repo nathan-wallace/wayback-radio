@@ -48,6 +48,8 @@ const bootstrapCatalogEntries = archiveCache?.catalog?.entries
     sampleItemIds: [],
     status: 'manifest'
   }));
+export const CURRENT_DATASET_VERSION = normalizeText(archiveCache?.version || archiveCache?.manifestVersion || archiveCache?.generatedAt) || 'bootstrap-manifest';
+
 const bootstrapCatalogPayload = bootstrapCatalogEntries.length
   ? buildCatalogPayload(bootstrapCatalogEntries, {
     error: null,
@@ -708,7 +710,7 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
           itemRouteIds: []
         };
         audioCache.set(cacheKey, result);
-        await saveYearSelection(year, normalizedIdentity, result, null, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL) });
+        await saveYearSelection(year, normalizedIdentity, result, null, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL), datasetVersion: CURRENT_DATASET_VERSION });
         return result;
       }
 
@@ -726,7 +728,7 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
         const deferredItemRecord = buildItemRecord(deferredResult, selectedItem.id);
 
         audioCache.set(cacheKey, deferredResult);
-        await saveYearSelection(year, normalizedIdentity, deferredResult, deferredItemRecord, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL) });
+        await saveYearSelection(year, normalizedIdentity, deferredResult, deferredItemRecord, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL), datasetVersion: CURRENT_DATASET_VERSION });
         return deferredResult;
       }
 
@@ -744,7 +746,7 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
           itemRouteIds
         };
         audioCache.set(cacheKey, result);
-        await saveYearSelection(year, normalizedIdentity, result, null, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL) });
+        await saveYearSelection(year, normalizedIdentity, result, null, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL), datasetVersion: CURRENT_DATASET_VERSION });
         return result;
       }
 
@@ -761,13 +763,13 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
       const itemRecord = buildItemRecord(result, itemData.id || selectedItem.id);
 
       audioCache.set(cacheKey, result);
-      await saveYearSelection(year, normalizedIdentity, result, itemRecord, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL) });
+      await saveYearSelection(year, normalizedIdentity, result, itemRecord, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL), datasetVersion: CURRENT_DATASET_VERSION });
       return result;
     } catch (error) {
       if (!isLocApiUnavailableError(error)) {
         console.error('Error fetching audio:', error);
       }
-      const staleResult = await getStaleYearSelection(year, normalizedIdentity);
+      const staleResult = await getStaleYearSelection(year, normalizedIdentity, { datasetVersion: CURRENT_DATASET_VERSION });
       if (staleResult) {
         const normalizedStaleResult = normalizeAudioResult({
           ...staleResult,
@@ -788,7 +790,7 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
         itemRouteIds: []
       };
       audioCache.set(cacheKey, result);
-      await saveYearSelection(year, normalizedIdentity, result, null, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL) });
+      await saveYearSelection(year, normalizedIdentity, result, null, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL), datasetVersion: CURRENT_DATASET_VERSION });
       return result;
     }
   });
@@ -836,6 +838,7 @@ function refreshBootstrappedCatalogInBackground() {
         generatedAt: catalogPayload.generatedAt,
         error: null,
         freshness: buildFreshness(CATALOG_CACHE_TTL),
+        datasetVersion: CURRENT_DATASET_VERSION,
       });
       return catalogPayload;
     })
@@ -859,7 +862,7 @@ export async function fetchAudioByYear(year, requestedIdentity = null, options =
   }
 
   const normalizedIdentity = normalizeRouteIdentity(requestedIdentity);
-  const storedResult = await getYearSelection(year, normalizedIdentity, { ttl: AUDIO_CACHE_TTL });
+  const storedResult = await getYearSelection(year, normalizedIdentity, { ttl: AUDIO_CACHE_TTL, datasetVersion: CURRENT_DATASET_VERSION });
   if (storedResult) {
     const normalizedStoredResult = normalizeAudioResult(storedResult);
     audioCache.set(cacheKey, normalizedStoredResult);
@@ -882,7 +885,7 @@ export async function fetchAudioById(audioId) {
   }
 
   const normalizedLookupId = extractLocItemId(audioId) || normalizeText(audioId);
-  const storedResult = await getItemByLookup(normalizedLookupId, { ttl: AUDIO_CACHE_TTL });
+  const storedResult = await getItemByLookup(normalizedLookupId, { ttl: AUDIO_CACHE_TTL, datasetVersion: CURRENT_DATASET_VERSION });
   if (storedResult) {
     const normalizedStoredResult = normalizeAudioResult(storedResult);
     audioCache.set(cacheKey, normalizedStoredResult);
@@ -922,11 +925,11 @@ export async function fetchAudioById(audioId) {
       };
       const itemRecord = buildItemRecord(result, selectedItem.id || audioId);
       audioCache.set(cacheKey, result);
-      await saveItemRecord(itemRecord, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL) });
+      await saveItemRecord(itemRecord, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL), datasetVersion: CURRENT_DATASET_VERSION });
       return result;
     } catch (error) {
       console.error('Error fetching audio by id:', error);
-      const staleResult = await getStaleItemByLookup(normalizedLookupId);
+      const staleResult = await getStaleItemByLookup(normalizedLookupId, { datasetVersion: CURRENT_DATASET_VERSION });
       if (staleResult) {
         const normalizedStaleResult = normalizeAudioResult({
           ...staleResult,
@@ -949,7 +952,7 @@ export async function fetchAvailableYears() {
     return availableYearsCache;
   }
 
-  const storedCatalog = await getCatalogSnapshot({ ttl: CATALOG_CACHE_TTL });
+  const storedCatalog = await getCatalogSnapshot({ ttl: CATALOG_CACHE_TTL, datasetVersion: CURRENT_DATASET_VERSION });
   if (storedCatalog) {
     availableYearsCache = buildCatalogPayload(storedCatalog.entries, {
       error: null,
@@ -977,13 +980,14 @@ export async function fetchAvailableYears() {
       generatedAt: availableYearsCache.generatedAt,
       error: null,
       freshness: buildFreshness(CATALOG_CACHE_TTL),
+      datasetVersion: CURRENT_DATASET_VERSION,
     });
     return availableYearsCache;
   } catch (error) {
     if (!isLocApiUnavailableError(error)) {
       console.error('Error fetching available years:', error);
     }
-    const staleCatalog = await getStaleCatalogSnapshot();
+    const staleCatalog = await getStaleCatalogSnapshot({ datasetVersion: CURRENT_DATASET_VERSION });
 
     if (staleCatalog) {
       return buildCatalogPayload(staleCatalog.entries, {

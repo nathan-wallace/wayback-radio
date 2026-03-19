@@ -3,7 +3,8 @@ import {
   fetchAvailableYears,
   fetchAudioByYear,
   fetchAudioById,
-  mergeCatalogYearEntry
+  mergeCatalogYearEntry,
+  CURRENT_DATASET_VERSION,
 } from '../services/AudioService';
 import {
   addFavorite,
@@ -194,7 +195,7 @@ export function useRadioController() {
   }, []);
 
   const refreshOfflineLibrary = useCallback(async () => {
-    const snapshot = await getCachedLibrarySnapshot();
+    const snapshot = await getCachedLibrarySnapshot({ datasetVersion: CURRENT_DATASET_VERSION });
     setOfflineLibrary(snapshot);
     return snapshot;
   }, []);
@@ -222,7 +223,7 @@ export function useRadioController() {
     if (result?.stale || result?.error) {
       await setPendingRefresh(true);
     } else {
-      await recordSuccessfulSync();
+      await recordSuccessfulSync(Date.now(), CURRENT_DATASET_VERSION);
     }
     await refreshOfflineState();
   }, [refreshOfflineState]);
@@ -455,7 +456,7 @@ export function useRadioController() {
         await setPendingRefresh(true);
         await refreshOfflineState();
       } else {
-        await recordSuccessfulSync();
+        await recordSuccessfulSync(Date.now(), CURRENT_DATASET_VERSION);
         await refreshOfflineState();
       }
 
