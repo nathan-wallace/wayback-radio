@@ -13,6 +13,14 @@ function notFoundResponse() {
   return createJsonResponse({}, { ok: false, status: 404 });
 }
 
+function createPlayback(url, mimeType = 'audio/mpeg') {
+  return {
+    primaryUrl: url,
+    mimeType,
+    streams: [{ url, mimeType, label: null, source: null, bitrate: null }],
+  };
+}
+
 function createSearchItem({ id, year, title, audio = true }) {
   return {
     id: `https://www.loc.gov/item/${id}/`,
@@ -90,6 +98,10 @@ describe('fetchAudioByYear', () => {
     const result = await fetchAudioByYear(1980);
 
     expect(result.error).toBeNull();
+    expect(result.playback).toMatchObject({
+      primaryUrl: 'https://cdn.example/match-1980.mp3',
+      mimeType: 'audio/mpeg',
+    });
     expect(result.metadata.title).toBe('Correct year second');
     expect(result.metadata.date).toBe('1980');
     expect(global.fetch.mock.calls.at(-1)[0]).toContain('/item/match-1980/');
@@ -149,7 +161,11 @@ describe('fetchAudioByYear', () => {
     const result = await fetchAudioByYear(1980, null, { deferAudio: true });
 
     expect(result.error).toBeNull();
-    expect(result.audioUrl).toBeNull();
+    expect(result.playback).toEqual({
+      primaryUrl: null,
+      mimeType: null,
+      streams: [],
+    });
     expect(result.itemId).toBe('deferred-1980');
     expect(result.metadata.title).toBe('Deferred Choice');
     expect(result.source).toBe('loc-search-selection');
@@ -161,7 +177,7 @@ describe('fetchAudioByYear', () => {
       1980,
       null,
       {
-        audioUrl: 'https://cdn.example/stale.mp3',
+        playback: createPlayback('https://cdn.example/stale.mp3'),
         metadata: { title: 'Cached Result', date: '1980', uid: '900' },
         error: null,
         itemUids: ['900']
@@ -170,7 +186,7 @@ describe('fetchAudioByYear', () => {
         id: '900',
         routeId: 'cached-1980',
         uid: '900',
-        audioUrl: 'https://cdn.example/stale.mp3',
+        playback: createPlayback('https://cdn.example/stale.mp3'),
         metadata: { title: 'Cached Result', date: '1980', uid: '900' },
       },
       {
@@ -195,7 +211,7 @@ describe('fetchAudioByYear', () => {
 
     expect(result.stale).toBe(true);
     expect(result.source).toBe('stale-year-cache');
-    expect(result.audioUrl).toBe('https://cdn.example/stale.mp3');
+    expect(result.playback.primaryUrl).toBe('https://cdn.example/stale.mp3');
     expect(result.metadata.title).toBe('Cached Result');
   });
 
@@ -224,7 +240,7 @@ describe('fetchAudioByYear', () => {
 
       if (String(url).endsWith('/data/items/static-1980-a.json')) {
         return createJsonResponse({
-          audioUrl: 'https://cdn.example/static-1980-a.mp3',
+          playback: createPlayback('https://cdn.example/static-1980-a.mp3'),
           metadata: {
             title: 'Static Dataset Choice',
             date: '1980',
@@ -383,15 +399,25 @@ describe('available years normalization', () => {
     })).toBe(true);
   });
 
-  it('coerces object-shaped resources when extracting an audio URL', () => {
-    expect(audioServiceTesting.getAudioUrlFromResources({
+  it('coerces object-shaped resources when extracting playback metadata', () => {
+    expect(audioServiceTesting.extractPlaybackFromResources({
       resources: {
         files: {
           url: 'https://cdn.example/object-shaped.mp3',
           mimetype: 'audio/mpeg'
         }
       }
-    })).toBe('https://cdn.example/object-shaped.mp3');
+    })).toEqual({
+      primaryUrl: 'https://cdn.example/object-shaped.mp3',
+      mimeType: 'audio/mpeg',
+      streams: [{
+        url: 'https://cdn.example/object-shaped.mp3',
+        mimeType: 'audio/mpeg',
+        label: null,
+        source: 'resource-file',
+        bitrate: null,
+      }],
+    });
   });
 
   it('treats numeric-keyed resource collections as playable when fetching available years', async () => {
@@ -523,7 +549,7 @@ describe('bootstrap manifest behavior', () => {
     const initial = await fetchAudioByYear(1942);
 
     expect(initial.bootstrap).toBe(true);
-    expect(initial.audioUrl).toBeNull();
+    expect(initial.playback.primaryUrl).toBeNull();
     expect(initial.error).toMatch(/playback is blocked from this origin/i);
     expect(initial.metadata.title).toBe('The night herding song');
   });

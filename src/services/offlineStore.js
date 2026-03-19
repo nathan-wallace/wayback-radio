@@ -65,7 +65,11 @@ async function persistFreshness(entityKey, freshness, datasetVersion = null) {
 function assembleItemResult(record) {
   if (!record) return null;
   return {
-    audioUrl: record.audioUrl ?? null,
+    playback: record.playback ?? (record.audioUrl ? {
+      primaryUrl: record.audioUrl,
+      mimeType: record.metadata?.mimeType ?? null,
+      streams: [{ url: record.audioUrl, mimeType: record.metadata?.mimeType ?? null }],
+    } : null),
     metadata: record.metadata ?? null,
     error: record.error ?? null,
     itemId: record.routeId || record.id || null,
@@ -229,7 +233,7 @@ async function assembleYearSelection(record, { ttl, datasetVersion } = {}) {
 
   if (!record.itemId) {
     return {
-      audioUrl: null,
+      playback: null,
       metadata: null,
       error: record.error || null,
       itemUids: record.itemUids || [],
