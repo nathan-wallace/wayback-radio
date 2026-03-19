@@ -1,11 +1,247 @@
 {
-  "generatedAt": null,
-  "source": "https://www.loc.gov/search/?q=sound+recording&fa=original-format:sound+recording|digitized&fo=json&c=100",
-  "catalog": {
-    "generatedAt": null,
-    "source": "bootstrap-manifest",
-    "entries": []
+  "generatedAt": "2026-03-19T00:00:00.000Z",
+  "source": "bootstrap-manifest",
+  "sourceMetadata": {
+    "generator": "scripts/generate-archive-cache.mjs",
+    "strategy": "fallback-seed",
+    "searchUrl": "https://www.loc.gov/search/?q=sound+recording&fa=original-format%3Asound+recording%7Cdigitized&fo=json&c=100&sp=1",
+    "itemUrlTemplate": "https://www.loc.gov/item/{itemId}/?fo=json",
+    "notes": "Static fallback seed used when the Library of Congress API is unavailable during generation."
   },
-  "availableYears": [],
-  "audioByYear": {}
+  "catalog": {
+    "generatedAt": "2026-03-19T00:00:00.000Z",
+    "source": "bootstrap-fallback-seed",
+    "pageCount": 0,
+    "entries": [
+      {
+        "year": 1903,
+        "itemCount": 1,
+        "sampleItemIds": [
+          "100010968"
+        ],
+        "status": "ready"
+      },
+      {
+        "year": 1917,
+        "itemCount": 1,
+        "sampleItemIds": [
+          "100010382"
+        ],
+        "status": "ready"
+      },
+      {
+        "year": 1942,
+        "itemCount": 1,
+        "sampleItemIds": [
+          "200197221"
+        ],
+        "status": "ready"
+      },
+      {
+        "year": 1952,
+        "itemCount": 1,
+        "sampleItemIds": [
+          "200197221"
+        ],
+        "status": "ready"
+      },
+      {
+        "year": 1970,
+        "itemCount": 1,
+        "sampleItemIds": [
+          "200196384"
+        ],
+        "status": "ready"
+      },
+      {
+        "year": 1978,
+        "itemCount": 1,
+        "sampleItemIds": [
+          "200196565"
+        ],
+        "status": "ready"
+      }
+    ]
+  },
+  "availableYears": [
+    1903,
+    1917,
+    1942,
+    1952,
+    1970,
+    1978
+  ],
+  "audioByYear": {
+    "1903": {
+      "audioUrl": "https://www.loc.gov/resource/ihas.100010968.0",
+      "metadata": {
+        "title": "I hear America singing",
+        "date": "1903",
+        "url": "https://www.loc.gov/item/ihas.100010968/",
+        "uid": "100010968",
+        "contributor": "Whitman, Walt, 1819-1892, Billy Collins, b. 1941",
+        "summary": "Billy Collins reads Walt Whitman's poem at the Library of Congress.",
+        "genre": "Literary readings",
+        "image": null,
+        "notes": [
+          "Recorded at the Library of Congress."
+        ],
+        "repository": "music division",
+        "aka": [],
+        "related_resources": [],
+        "formats": [],
+        "location": "",
+        "mime_type": "audio"
+      },
+      "title": "ihas.100010968",
+      "itemId": "ihas.100010968",
+      "error": null,
+      "itemUids": [
+        "100010968"
+      ]
+    },
+    "1917": {
+      "audioUrl": "https://www.loc.gov/resource/ihas.100010382.0",
+      "metadata": {
+        "title": "America: My country 'tis of thee",
+        "date": "1917",
+        "url": "https://www.loc.gov/item/ihas.100010382/",
+        "uid": "100010382",
+        "contributor": "",
+        "summary": "Bootstrap seed for an Edison-era Library of Congress audio item.",
+        "genre": "Audio Recording",
+        "image": null,
+        "notes": [
+          "Representative early recording seed."
+        ],
+        "repository": "",
+        "aka": [],
+        "related_resources": [],
+        "formats": [],
+        "location": "",
+        "mime_type": "audio"
+      },
+      "title": "ihas.100010382",
+      "itemId": "ihas.100010382",
+      "error": null,
+      "itemUids": [
+        "100010382"
+      ]
+    },
+    "1942": {
+      "audioUrl": "https://www.loc.gov/resource/ihas.200197221.0",
+      "metadata": {
+        "title": "The night herding song",
+        "date": "1942",
+        "url": "https://www.loc.gov/item/ihas.200197221/",
+        "uid": "200197221",
+        "contributor": "Stephens, Harry, Lomax, John A. (John Avery)",
+        "summary": "Recorded in Dallas, Texas and later published in 1952.",
+        "genre": "sound recording",
+        "image": null,
+        "notes": [
+          "Date: Recorded in 1942.",
+          "Venue: Recorded in Dallas, Texas."
+        ],
+        "repository": "american folklife center",
+        "aka": [],
+        "related_resources": [],
+        "formats": [],
+        "location": "Texas, United States",
+        "mime_type": "audio"
+      },
+      "title": "ihas.200197221",
+      "itemId": "ihas.200197221",
+      "error": null,
+      "itemUids": [
+        "200197221"
+      ]
+    },
+    "1952": {
+      "audioUrl": "https://www.loc.gov/resource/ihas.200197221.0",
+      "metadata": {
+        "title": "The night herding song",
+        "date": "1952",
+        "url": "https://www.loc.gov/item/ihas.200197221/",
+        "uid": "200197221",
+        "contributor": "Stephens, Harry, Lomax, John A. (John Avery)",
+        "summary": "Published in 1952 from a 1942 field recording.",
+        "genre": "sound recording",
+        "image": null,
+        "notes": [
+          "Bibliographic History: Published on the Library of Congress LP AFS L28."
+        ],
+        "repository": "american folklife center",
+        "aka": [],
+        "related_resources": [],
+        "formats": [],
+        "location": "Texas, United States",
+        "mime_type": "audio"
+      },
+      "title": "ihas.200197221",
+      "itemId": "ihas.200197221",
+      "error": null,
+      "itemUids": [
+        "200197221"
+      ]
+    },
+    "1970": {
+      "audioUrl": "https://www.loc.gov/resource/ihas.200196384.0",
+      "metadata": {
+        "title": "Jesus Leads Me All the Way",
+        "date": "1970",
+        "url": "https://www.loc.gov/item/ihas.200196384/",
+        "uid": "200196384",
+        "contributor": "Yurchenco, Henrietta, Goodwin",
+        "summary": "Gullah spiritual recorded on John's Island, South Carolina.",
+        "genre": "sound recording",
+        "image": null,
+        "notes": [
+          "Date: March 29, 1970.",
+          "Venue: Recorded in John's Island, South Carolina."
+        ],
+        "repository": "american folklife center",
+        "aka": [],
+        "related_resources": [],
+        "formats": [],
+        "location": "South Carolina, United States",
+        "mime_type": "audio"
+      },
+      "title": "ihas.200196384",
+      "itemId": "ihas.200196384",
+      "error": null,
+      "itemUids": [
+        "200196384"
+      ]
+    },
+    "1978": {
+      "audioUrl": "https://www.loc.gov/resource/ihas.200196565.0",
+      "metadata": {
+        "title": "Deep Down in My Heart",
+        "date": "1978",
+        "url": "https://www.loc.gov/item/ihas.200196565",
+        "uid": "200196565",
+        "contributor": "Gordon, Robert Winslow, Givens, W. M.",
+        "summary": "Bootstrap seed representing the Robert Winslow Gordon Collection release.",
+        "genre": "sound recording",
+        "image": null,
+        "notes": [
+          "Source: Published in 1978 in commemoration of the 50th anniversary of the Archive of Folk Culture.",
+          "Date: March 19, 1926."
+        ],
+        "repository": "american folklife center",
+        "aka": [],
+        "related_resources": [],
+        "formats": [],
+        "location": "Georgia, United States",
+        "mime_type": "audio"
+      },
+      "title": "ihas.200196565",
+      "itemId": "ihas.200196565",
+      "error": null,
+      "itemUids": [
+        "200196565"
+      ]
+    }
+  }
 }
