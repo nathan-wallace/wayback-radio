@@ -260,6 +260,15 @@ describe('bootstrap manifest behavior', () => {
     expect(refreshed.entries.map((entry) => entry.year)).toEqual([1942, 1970]);
   });
 
+  it('sanitizes bundled LOC resource audio URLs so blocked cross-origin playback does not start immediately', async () => {
+    const initial = await fetchAudioByYear(1942);
+
+    expect(initial.bootstrap).toBe(true);
+    expect(initial.audioUrl).toBeNull();
+    expect(initial.error).toMatch(/playback is blocked from this origin/i);
+    expect(initial.metadata.title).toBe('The night herding song');
+  });
+
   it('uses bootstrap audio as a startup optimization and replaces it after the background refresh completes', async () => {
     global.fetch
       .mockResolvedValueOnce({

@@ -4,7 +4,12 @@ import { animateScreen } from '../utils/audioUtils';
 import { Howl } from 'howler';
 import gsap from 'gsap';
 
-const click = new Howl({ src: ['./sounds/click.webm'], volume: 0.3 });
+const click = new Howl({
+  src: ['./sounds/click.webm'],
+  volume: 0.3,
+  preload: true,
+  pool: 8
+});
 
 export default function Button() {
   const { isOn, setIsOn, screenRef } = useRadio();

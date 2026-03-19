@@ -85,6 +85,25 @@ function shouldSkipLocApiRequests() {
   return locApiState.unavailable;
 }
 
+function isCrossOriginLocAudioResource(url) {
+  const normalizedUrl = normalizeText(url);
+  return normalizedUrl.startsWith(`${BASE_URL}/resource/`);
+}
+
+function normalizeBootstrapAudioResult(result) {
+  if (!result) return result;
+
+  if (!isCrossOriginLocAudioResource(result.audioUrl)) {
+    return result;
+  }
+
+  return {
+    ...result,
+    audioUrl: null,
+    error: result.error || 'Library of Congress playback is blocked from this origin, so this bundled recording metadata is view-only until a live refresh succeeds.'
+  };
+}
+
 function extractUid(itemId) {
   if (!itemId) return null;
   const match = String(itemId).match(/ihas\.(\d+)/);
@@ -488,13 +507,13 @@ function getBootstrappedYearResult(year, requestedIdentity = null) {
     return null;
   }
 
-  const result = normalizeAudioResult({
+  const result = normalizeBootstrapAudioResult(normalizeAudioResult({
     ...cached,
     itemId: cached.itemId || cached.title || null,
     metadata: cached.metadata ? { ...cached.metadata } : null,
     source: cached.source || archiveCache?.source || 'bootstrap-manifest',
     bootstrap: true
-  });
+  }));
   audioCache.set(`${year}-${requestedIdentity || ''}`, result);
   return result;
 }

@@ -1,8 +1,10 @@
 // useAudioManager.jsx
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Howl } from 'howler';
+import { Howl, Howler } from 'howler';
 
 const FADE_DURATION_MS = 500;
+
+Howler.html5PoolSize = Math.max(Howler.html5PoolSize || 10, 20);
 
 export const useAudioManager = (audioUrl, isOn, volume) => {
   const [sound, setSound] = useState(null);
