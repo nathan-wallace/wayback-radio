@@ -33,6 +33,7 @@ const initialState = {
   catalogSource: null,
   catalogGeneratedAt: null,
   itemUids: [],
+  itemRouteIds: [],
   itemIndex: 0,
   currentItemId: null,
   sessionStatus: 'booting',
@@ -90,6 +91,8 @@ function radioReducer(state, action) {
     }
     case 'SET_ITEM_UIDS':
       return { ...state, itemUids: action.payload };
+    case 'SET_ITEM_ROUTE_IDS':
+      return { ...state, itemRouteIds: action.payload };
     case 'SET_ITEM_INDEX':
       return { ...state, itemIndex: action.payload };
     case 'SET_CURRENT_ITEM_ID':
@@ -99,13 +102,14 @@ function radioReducer(state, action) {
     case 'SET_ERROR':
       return { ...state, error: action.payload };
     case 'APPLY_AUDIO_RESULT': {
-      const { audioUrl, metadata, error, itemUids, itemIndex, itemId, sessionStatus } = action.payload;
+      const { audioUrl, metadata, error, itemUids, itemRouteIds, itemIndex, itemId, sessionStatus } = action.payload;
       return {
         ...state,
         audioUrl,
         metadata,
         error,
         itemUids: itemUids ?? state.itemUids,
+        itemRouteIds: itemRouteIds ?? state.itemRouteIds,
         itemIndex: itemIndex ?? state.itemIndex,
         currentItemId: itemId ?? state.currentItemId,
         sessionStatus,
@@ -176,6 +180,7 @@ export function useRadioController() {
     catalogSource,
     catalogGeneratedAt,
     itemUids,
+    itemRouteIds,
     itemIndex,
     currentItemId,
     sessionStatus,
@@ -208,6 +213,7 @@ export function useRadioController() {
   const setAvailableYears = useCallback((yearsOrUpdater) => dispatch({ type: 'SET_AVAILABLE_YEARS', payload: yearsOrUpdater }), []);
   const setCatalog = useCallback((payload) => dispatch({ type: 'SET_CATALOG', payload }), []);
   const setItemUids = useCallback((uids) => dispatch({ type: 'SET_ITEM_UIDS', payload: uids }), []);
+  const setItemRouteIds = useCallback((routeIds) => dispatch({ type: 'SET_ITEM_ROUTE_IDS', payload: routeIds }), []);
   const setItemIndex = useCallback((index) => dispatch({ type: 'SET_ITEM_INDEX', payload: index }), []);
   const setSessionStatus = useCallback((nextStatus) => dispatch({ type: 'SET_SESSION_STATUS', payload: nextStatus }), []);
   const setError = useCallback((nextError) => dispatch({ type: 'SET_ERROR', payload: nextError }), []);
@@ -229,6 +235,7 @@ export function useRadioController() {
         metadata: result.metadata,
         error: result.error,
         itemUids: updates.itemUids,
+        itemRouteIds: updates.itemRouteIds,
         itemIndex: updates.itemIndex,
         itemId: updates.itemId ?? result.itemId ?? result.metadata?.uid ?? null,
         sessionStatus: result.error ? 'error' : 'ready'
@@ -272,25 +279,29 @@ export function useRadioController() {
   }, []);
 
   const loadYearAudio = useCallback(async (targetYear, itemId = null) => (
-    withLatestSelection('loadingYear', () => fetchAudioByYear(targetYear, itemId), async (result) => {
+    withLatestSelection('loadingYear', () => fetchAudioByYear(targetYear, itemId, { deferAudio: true }), async (result) => {
       const selectedItemId = result.itemId || itemId || result.metadata?.uid || null;
-      const itemUidIndex = selectedItemId ? result.itemUids?.indexOf(selectedItemId) : -1;
+      const itemIndexByRoute = selectedItemId ? result.itemRouteIds?.indexOf(selectedItemId) : -1;
+      const itemIndexByUid = selectedItemId ? result.itemUids?.indexOf(selectedItemId) : -1;
+      const resolvedItemIndex = itemIndexByRoute >= 0 ? itemIndexByRoute : itemIndexByUid;
 
       await applyAudioResult(result, {
         itemUids: result.itemUids || [],
-        itemIndex: itemUidIndex >= 0 ? itemUidIndex : 0,
+        itemRouteIds: result.itemRouteIds || [],
+        itemIndex: resolvedItemIndex >= 0 ? resolvedItemIndex : 0,
         itemId: selectedItemId
       });
       prefetchAdjacentYears(targetYear, availableYears);
     })
   ), [applyAudioResult, availableYears, prefetchAdjacentYears, withLatestSelection]);
 
-  const loadAudioById = useCallback(async (audioId, targetYear) => (
+  const loadAudioById = useCallback(async (audioId, targetYear, updates = {}) => (
     withLatestSelection('loadingItem', () => fetchAudioById(audioId), async (result) => {
       await applyAudioResult(result, {
-        itemUids: [audioId],
-        itemIndex: 0,
-        itemId: result.itemId || audioId
+        itemUids: updates.itemUids,
+        itemRouteIds: updates.itemRouteIds,
+        itemIndex: updates.itemIndex,
+        itemId: updates.itemId ?? result.itemId ?? audioId
       });
       if (targetYear != null) {
         dispatch({ type: 'SET_YEAR', payload: targetYear });
@@ -303,16 +314,28 @@ export function useRadioController() {
       return;
     }
 
-    const targetItemId = itemUids[idx];
-    await withLatestSelection('loadingItem', () => fetchAudioById(targetItemId), async (result) => {
-      await applyAudioResult(result, {
-        itemUids: [...itemUids],
-        itemIndex: idx,
-        itemId: result.itemId || targetItemId
-      });
-    });
+    const targetItemId = itemRouteIds[idx] || itemUids[idx];
+    const selectionUpdates = {
+      itemUids: [...itemUids],
+      itemRouteIds: [...itemRouteIds],
+      itemIndex: idx,
+      itemId: targetItemId
+    };
+
     setOverrideAudio(true);
-  }, [applyAudioResult, itemUids, withLatestSelection]);
+
+    if (!isOn) {
+      dispatch({ type: 'SET_AUDIO_URL', payload: null });
+      dispatch({ type: 'SET_METADATA', payload: null });
+      dispatch({ type: 'SET_ERROR', payload: null });
+      dispatch({ type: 'SET_ITEM_INDEX', payload: idx });
+      dispatch({ type: 'SET_CURRENT_ITEM_ID', payload: targetItemId });
+      dispatch({ type: 'SET_SESSION_STATUS', payload: 'ready' });
+      return;
+    }
+
+    await loadAudioById(targetItemId, year, selectionUpdates);
+  }, [isOn, itemRouteIds, itemUids, loadAudioById, year]);
 
   const nextItem = useCallback(() => {
     if (itemIndex < itemUids.length - 1) {
@@ -535,7 +558,21 @@ export function useRadioController() {
     }
 
     loadYearAudio(year);
-  }, [year, initComplete, loadYearAudio, overrideAudio, sessionStatus]);
+  }, [year, initComplete, loadYearAudio, overrideAudio]);
+
+
+  useEffect(() => {
+    if (!initComplete || !isOn || !currentItemId || audioUrl || error || sessionStatus === 'loadingItem' || sessionStatus === 'booting') {
+      return;
+    }
+
+    loadAudioById(currentItemId, year, {
+      itemUids,
+      itemRouteIds,
+      itemIndex,
+      itemId: currentItemId
+    });
+  }, [audioUrl, currentItemId, error, initComplete, isOn, itemIndex, itemRouteIds, itemUids, loadAudioById, sessionStatus, year]);
 
   useEffect(() => {
     if (!initComplete) {
@@ -611,8 +648,10 @@ export function useRadioController() {
     catalogSource,
     catalogGeneratedAt,
     itemUids,
+    itemRouteIds,
     filteredItemUids,
     setItemUids,
+    setItemRouteIds,
     itemIndex,
     setItemIndex,
     currentItemId,
@@ -658,6 +697,7 @@ export function useRadioController() {
     isOn,
     itemIndex,
     itemUids,
+    itemRouteIds,
     metadata,
     nextItem,
     offlineLibrary,
@@ -675,6 +715,7 @@ export function useRadioController() {
     setIsOn,
     setItemIndex,
     setItemUids,
+    setItemRouteIds,
     setMetadata,
     setSessionStatus,
     setVolume,

@@ -1,4 +1,4 @@
-import { __testing as audioServiceTesting, fetchAudioByYear, fetchAvailableYears } from '../AudioService';
+import { __testing as audioServiceTesting, fetchAudioByYear, fetchAudioById, fetchAvailableYears } from '../AudioService';
 import { __testing as offlineStoreTesting, saveYearSelection } from '../offlineStore';
 
 function createSearchItem({ id, year, title, audio = true }) {
@@ -111,6 +111,26 @@ describe('fetchAudioByYear', () => {
     expect(result.error).toBeNull();
     expect(result.metadata.title).toBe('First playable');
     expect(global.fetch.mock.calls[1][0]).toContain('/item/first-1980/');
+  });
+
+
+  it('can defer item-detail requests until playback time while preserving the selected route id', async () => {
+    global.fetch.mockResolvedValueOnce({
+      json: async () => ({
+        results: [
+          createSearchItem({ id: 'deferred-1980', year: 1980, title: 'Deferred Choice' })
+        ]
+      })
+    });
+
+    const result = await fetchAudioByYear(1980, null, { deferAudio: true });
+
+    expect(result.error).toBeNull();
+    expect(result.audioUrl).toBeNull();
+    expect(result.itemId).toBe('deferred-1980');
+    expect(result.metadata.title).toBe('Deferred Choice');
+    expect(result.source).toBe('loc-search-selection');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to stale cached audio when the network request fails', async () => {
@@ -334,5 +354,31 @@ describe('bootstrap manifest behavior', () => {
     await flushAsyncWork();
 
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('fetchAudioById', () => {
+  beforeEach(async () => {
+    window.history.replaceState({}, '', 'http://localhost/');
+    delete global.__WAYBACK_ENABLE_BOOTSTRAP_AUTO_REFRESH__;
+    jest.restoreAllMocks();
+    global.fetch = jest.fn();
+    audioServiceTesting.resetCaches();
+    await offlineStoreTesting.resetOfflineStore();
+    localStorage.clear();
+  });
+
+  it('requests non-UID route ids from the LOC item endpoint without forcing an ihas prefix', async () => {
+    global.fetch.mockResolvedValueOnce({
+      json: async () => createItemPayload({ id: 'route-only-1980', year: 1980, title: 'Route Based Item' })
+    });
+
+    const result = await fetchAudioById('route-only-1980');
+
+    expect(result.error).toBeNull();
+    expect(result.itemId).toBe('route-only-1980');
+    expect(result.metadata.title).toBe('Route Based Item');
+    expect(global.fetch).toHaveBeenCalledWith('https://www.loc.gov/item/route-only-1980/?fo=json');
   });
 });

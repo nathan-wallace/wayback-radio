@@ -75,6 +75,7 @@ describe('useRadioController', () => {
       metadata: { title: 'First Item', date: '1940', uid: '111' },
       error: null,
       itemUids: ['111', '222'],
+      itemRouteIds: ['loc-1940-first', 'loc-1940-second'],
       itemId: 'loc-1940-first'
     });
     fetchAudioById.mockResolvedValue({
@@ -103,6 +104,44 @@ describe('useRadioController', () => {
 
     await waitFor(() => {
       expect(window.history.replaceState).toHaveBeenLastCalledWith({}, '', '/?year=1940&itemId=loc-1940-second&autoplay=true');
+    });
+  });
+
+  it('defers item-detail fetches until playback is turned on for the selected route item', async () => {
+    fetchAvailableYears.mockResolvedValue({
+      years: [1940],
+      entries: [{ year: 1940, itemCount: 1, sampleItemIds: ['111'], status: 'ready' }],
+      source: 'catalog-test',
+      generatedAt: '2026-03-18T00:00:00.000Z',
+      error: null
+    });
+    fetchAudioByYear.mockResolvedValue({
+      audioUrl: null,
+      metadata: { title: 'Deferred Item', date: '1940', uid: '111' },
+      error: null,
+      itemUids: ['111'],
+      itemRouteIds: ['loc-1940-first'],
+      itemId: 'loc-1940-first'
+    });
+    fetchAudioById.mockResolvedValue({
+      audioUrl: 'https://cdn.example/one.mp3',
+      metadata: { title: 'Deferred Item', date: '1940', uid: '111' },
+      error: null,
+      itemId: 'loc-1940-first'
+    });
+
+    const { result } = renderHook(() => useRadioController());
+
+    await waitFor(() => expect(result.current.initComplete).toBe(true));
+
+    expect(fetchAudioById).not.toHaveBeenCalled();
+
+    await act(async () => {
+      result.current.setIsOn(true);
+    });
+
+    await waitFor(() => {
+      expect(fetchAudioById).toHaveBeenCalledWith('loc-1940-first');
     });
   });
 
