@@ -1,4 +1,5 @@
-import { fetchAudioByYear } from '../AudioService';
+import { __testing as audioServiceTesting, fetchAudioByYear } from '../AudioService';
+import { __testing as offlineStoreTesting } from '../offlineStore';
 
 function createSearchItem({ id, year, title, audio = true }) {
   return {
@@ -31,9 +32,11 @@ function createItemPayload({ id, year, title }) {
 }
 
 describe('fetchAudioByYear', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.restoreAllMocks();
     global.fetch = jest.fn();
+    audioServiceTesting.resetCaches();
+    await offlineStoreTesting.resetOfflineStore();
     localStorage.clear();
   });
 

@@ -1,15 +1,18 @@
 import archiveCache from '../data/archive-cache.json';
 import { createLinkItems, joinMetadataParts } from '../config/metadataFields';
+import {
+  getCatalogSnapshot,
+  getItemByLookup,
+  getStaleCatalogSnapshot,
+  getYearSelection,
+  saveCatalogSnapshot,
+  saveItemRecord,
+  saveYearSelection,
+} from './offlineStore';
 
 const BASE_URL = 'https://www.loc.gov';
 const AUDIO_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const CATALOG_CACHE_TTL = 24 * 60 * 60 * 1000;
-const LOCAL_CATALOG_KEY = 'availableCatalog';
-const CATALOG_CACHE_TIMESTAMP_KEY = 'availableCatalogTimestamp';
-const AUDIO_CACHE_PREFIX = 'audioCache-';
-const AUDIO_ID_CACHE_PREFIX = 'audioIdCache-';
-const AUDIO_CACHE_TIMESTAMP_PREFIX = 'audioCacheTimestamp-';
-const AUDIO_ID_CACHE_TIMESTAMP_PREFIX = 'audioIdCacheTimestamp-';
 const CATALOG_PAGE_SIZE = 100;
 const MAX_CATALOG_SAMPLE_IDS = 3;
 const MAX_CATALOG_PAGES = 100;
@@ -385,34 +388,25 @@ function isPlayableSearchItem(item) {
   return item?.resources?.some((resource) => isPlayableResource(resource));
 }
 
-function readLocalCache(storageKey, timestampKey, ttl) {
-  if (typeof localStorage === 'undefined') return null;
+function buildItemRecord(result, fallbackId = null) {
+  if (!result?.metadata && !result?.audioUrl && !result?.error) return null;
 
-  const stored = localStorage.getItem(storageKey);
-  if (!stored) return null;
+  const routeId = normalizeText(result?.itemId) || null;
+  const uid = normalizeText(result?.metadata?.uid) || extractUid(routeId) || normalizeText(fallbackId) || null;
+  const id = extractLocItemId(routeId)
+    || extractLocItemId(fallbackId)
+    || (uid && !/^https?:/i.test(uid) ? uid : null);
 
-  const timestamp = Number.parseInt(localStorage.getItem(timestampKey), 10);
-  if (!timestamp || Date.now() - timestamp >= ttl) {
-    return null;
-  }
+  if (!id) return null;
 
-  try {
-    return JSON.parse(stored);
-  } catch (error) {
-    console.warn(`Failed to parse cache for ${storageKey}`, error);
-    return null;
-  }
-}
-
-function writeLocalCache(storageKey, timestampKey, value) {
-  if (typeof localStorage === 'undefined') return;
-
-  try {
-    localStorage.setItem(storageKey, JSON.stringify(value));
-    localStorage.setItem(timestampKey, Date.now().toString());
-  } catch (error) {
-    console.warn(`Failed to persist cache for ${storageKey}`, error);
-  }
+  return {
+    id,
+    routeId: routeId || id,
+    uid,
+    audioUrl: result.audioUrl || null,
+    metadata: normalizeMetadata(result.metadata),
+    error: result.error || null,
+  };
 }
 
 function getBootstrappedYearResult(year, requestedIdentity = null) {
@@ -578,15 +572,12 @@ export async function fetchAudioByYear(year, requestedIdentity = null) {
     return audioCache.get(cacheKey);
   }
 
-  const localResult = readLocalCache(
-    `${AUDIO_CACHE_PREFIX}${cacheKey}`,
-    `${AUDIO_CACHE_TIMESTAMP_PREFIX}${cacheKey}`,
-    AUDIO_CACHE_TTL
-  );
-  if (localResult) {
-    const normalizedLocalResult = normalizeAudioResult(localResult);
-    audioCache.set(cacheKey, normalizedLocalResult);
-    return normalizedLocalResult;
+  const normalizedIdentity = normalizeRouteIdentity(requestedIdentity);
+  const storedResult = await getYearSelection(year, normalizedIdentity, { ttl: AUDIO_CACHE_TTL });
+  if (storedResult) {
+    const normalizedStoredResult = normalizeAudioResult(storedResult);
+    audioCache.set(cacheKey, normalizedStoredResult);
+    return normalizedStoredResult;
   }
 
   const bootstrappedResult = getBootstrappedYearResult(year, requestedIdentity);
@@ -612,11 +603,7 @@ export async function fetchAudioByYear(year, requestedIdentity = null) {
           itemUids: []
         };
         audioCache.set(cacheKey, result);
-        writeLocalCache(
-          `${AUDIO_CACHE_PREFIX}${cacheKey}`,
-          `${AUDIO_CACHE_TIMESTAMP_PREFIX}${cacheKey}`,
-          result
-        );
+        await saveYearSelection(year, normalizedIdentity, result);
         return result;
       }
 
@@ -633,11 +620,7 @@ export async function fetchAudioByYear(year, requestedIdentity = null) {
           itemUids
         };
         audioCache.set(cacheKey, result);
-        writeLocalCache(
-          `${AUDIO_CACHE_PREFIX}${cacheKey}`,
-          `${AUDIO_CACHE_TIMESTAMP_PREFIX}${cacheKey}`,
-          result
-        );
+        await saveYearSelection(year, normalizedIdentity, result);
         return result;
       }
 
@@ -649,13 +632,10 @@ export async function fetchAudioByYear(year, requestedIdentity = null) {
         itemUids,
         itemId: getItemRouteId(selectedItem, itemData)
       });
+      const itemRecord = buildItemRecord(result, itemData.id || selectedItem.id);
 
       audioCache.set(cacheKey, result);
-      writeLocalCache(
-        `${AUDIO_CACHE_PREFIX}${cacheKey}`,
-        `${AUDIO_CACHE_TIMESTAMP_PREFIX}${cacheKey}`,
-        result
-      );
+      await saveYearSelection(year, normalizedIdentity, result, itemRecord);
       return result;
     } catch (error) {
       console.error('Error fetching audio:', error);
@@ -666,11 +646,7 @@ export async function fetchAudioByYear(year, requestedIdentity = null) {
         itemUids: []
       };
       audioCache.set(cacheKey, result);
-      writeLocalCache(
-        `${AUDIO_CACHE_PREFIX}${cacheKey}`,
-        `${AUDIO_CACHE_TIMESTAMP_PREFIX}${cacheKey}`,
-        result
-      );
+      await saveYearSelection(year, normalizedIdentity, result);
       return result;
     }
   });
@@ -682,15 +658,12 @@ export async function fetchAudioById(audioId) {
     return audioCache.get(cacheKey);
   }
 
-  const localResult = readLocalCache(
-    `${AUDIO_ID_CACHE_PREFIX}${cacheKey}`,
-    `${AUDIO_ID_CACHE_TIMESTAMP_PREFIX}${cacheKey}`,
-    AUDIO_CACHE_TTL
-  );
-  if (localResult) {
-    const normalizedLocalResult = normalizeAudioResult(localResult);
-    audioCache.set(cacheKey, normalizedLocalResult);
-    return normalizedLocalResult;
+  const normalizedLookupId = extractLocItemId(audioId) || normalizeText(audioId);
+  const storedResult = await getItemByLookup(normalizedLookupId, { ttl: AUDIO_CACHE_TTL });
+  if (storedResult) {
+    const normalizedStoredResult = normalizeAudioResult(storedResult);
+    audioCache.set(cacheKey, normalizedStoredResult);
+    return normalizedStoredResult;
   }
 
   let requestUrl = audioId;
@@ -720,22 +693,14 @@ export async function fetchAudioById(audioId) {
         error: null,
         itemId: getItemRouteId(selectedItem, selectedItem)
       };
+      const itemRecord = buildItemRecord(result, selectedItem.id || audioId);
       audioCache.set(cacheKey, result);
-      writeLocalCache(
-        `${AUDIO_ID_CACHE_PREFIX}${cacheKey}`,
-        `${AUDIO_ID_CACHE_TIMESTAMP_PREFIX}${cacheKey}`,
-        result
-      );
+      await saveItemRecord(itemRecord);
       return result;
     } catch (error) {
       console.error('Error fetching audio by id:', error);
       const result = { audioUrl: null, metadata: null, error: 'Error fetching audio by id.' };
       audioCache.set(cacheKey, result);
-      writeLocalCache(
-        `${AUDIO_ID_CACHE_PREFIX}${cacheKey}`,
-        `${AUDIO_ID_CACHE_TIMESTAMP_PREFIX}${cacheKey}`,
-        result
-      );
       return result;
     }
   });
@@ -746,16 +711,12 @@ export async function fetchAvailableYears() {
     return availableYearsCache;
   }
 
-  const localCatalog = readLocalCache(
-    LOCAL_CATALOG_KEY,
-    CATALOG_CACHE_TIMESTAMP_KEY,
-    CATALOG_CACHE_TTL
-  );
-  if (localCatalog) {
-    availableYearsCache = buildCatalogPayload(localCatalog.entries || localCatalog, {
+  const storedCatalog = await getCatalogSnapshot({ ttl: CATALOG_CACHE_TTL });
+  if (storedCatalog) {
+    availableYearsCache = buildCatalogPayload(storedCatalog.entries, {
       error: null,
-      source: localCatalog.source || 'local-cache',
-      generatedAt: localCatalog.generatedAt || null
+      source: storedCatalog.source || 'indexeddb',
+      generatedAt: storedCatalog.generatedAt || null
     });
     return availableYearsCache;
   }
@@ -771,29 +732,23 @@ export async function fetchAvailableYears() {
 
   try {
     availableYearsCache = await loadCatalogFromSearch();
-    writeLocalCache(LOCAL_CATALOG_KEY, CATALOG_CACHE_TIMESTAMP_KEY, {
+    await saveCatalogSnapshot({
       entries: availableYearsCache.entries,
       source: availableYearsCache.source,
-      generatedAt: availableYearsCache.generatedAt
+      generatedAt: availableYearsCache.generatedAt,
+      error: null,
     });
     return availableYearsCache;
   } catch (error) {
     console.error('Error fetching available years:', error);
-    const staleCatalog = typeof localStorage !== 'undefined'
-      ? localStorage.getItem(LOCAL_CATALOG_KEY)
-      : null;
+    const staleCatalog = await getStaleCatalogSnapshot();
 
     if (staleCatalog) {
-      try {
-        const parsedCatalog = JSON.parse(staleCatalog);
-        return buildCatalogPayload(parsedCatalog.entries || parsedCatalog, {
-          error: 'Error fetching available years.',
-          source: parsedCatalog.source || 'stale-local-cache',
-          generatedAt: parsedCatalog.generatedAt || null
-        });
-      } catch (parseError) {
-        console.warn('Failed to parse stale available years cache', parseError);
-      }
+      return buildCatalogPayload(staleCatalog.entries, {
+        error: 'Error fetching available years.',
+        source: staleCatalog.source || 'stale-indexeddb',
+        generatedAt: staleCatalog.generatedAt || null
+      });
     }
 
     return buildCatalogPayload(bootstrapCatalogEntries, {
@@ -819,4 +774,10 @@ export const __testing = {
   getItemRouteId,
   normalizeMetadata,
   processLinks,
+  buildItemRecord,
+  resetCaches() {
+    audioCache.clear();
+    requestCache.clear();
+    availableYearsCache = null;
+  },
 };
