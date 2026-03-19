@@ -22,6 +22,9 @@ export default function DisplayScreen() {
   }, [isOn, audioUrl, metadata, error, isLoading, screenRef, transportState]);
 
   const isEmpty = sessionStatus === 'empty';
+  const hasMetadata = Boolean(metadata);
+  const showMetadata = !isLoading && !isEmpty && hasMetadata;
+  const showTransport = showMetadata && Boolean(audioUrl) && isOn && !error;
 
   return (
     <div className="glass">
@@ -34,12 +37,14 @@ export default function DisplayScreen() {
         {isLoading && <p className="loading">{sessionStatus === 'loadingItem' ? 'Loading recording...' : 'Loading station...'}</p>}
         {!isLoading && isEmpty && <p className="empty-state">{error || 'No recordings available.'}</p>}
         {!isLoading && !isEmpty && error && <p className="error">{error}</p>}
-        {!isLoading && audioUrl && isOn && !error && (
+        {showMetadata && (
           <>
             <MetadataPanel metadata={metadata} />
-            <p className="metadata-transport">
-              <small>Playback: {transportState}</small>
-            </p>
+            {showTransport && (
+              <p className="metadata-transport">
+                <small>Playback: {transportState}</small>
+              </p>
+            )}
           </>
         )}
       </div>
