@@ -163,6 +163,11 @@ export function useRadioController() {
   const [state, dispatch] = useReducer(radioReducer, initialState);
   const [initialParams] = useState(parseInitialParams);
   const [overrideAudio, setOverrideAudio] = useState(false);
+  const [selectionRouteState, setSelectionRouteState] = useState({
+    source: initialParams.source,
+    uid: initialParams.uid,
+    audioUrl: initialParams.audioUrl
+  });
   const [initComplete, setInitComplete] = useState(false);
   const [offlineState, setOfflineState] = useState(initialOfflineState);
   const [offlineLibrary, setOfflineLibrary] = useState(initialOfflineLibrary);
@@ -283,6 +288,7 @@ export function useRadioController() {
 
   const loadYearAudio = useCallback(async (targetYear, itemId = null) => (
     withLatestSelection('loadingYear', () => fetchAudioByYear(targetYear, itemId, { deferAudio: true }), async (result) => {
+      setSelectionRouteState({ source: null, uid: null, audioUrl: null });
       const selectedItemId = result.itemId || itemId || result.metadata?.uid || null;
       const itemIndexByRoute = selectedItemId ? result.itemRouteIds?.indexOf(selectedItemId) : -1;
       const itemIndexByUid = selectedItemId ? result.itemUids?.indexOf(selectedItemId) : -1;
@@ -299,11 +305,13 @@ export function useRadioController() {
   ), [applyAudioResult, availableYears, prefetchAdjacentYears, withLatestSelection]);
 
   const loadAudioById = useCallback(async (audioId, targetYear, updates = {}) => {
+    const nextRouteState = updates.routeState || { source: null, uid: null, audioUrl: null };
     const fetcher = isDirectAudioUrl(audioId)
       ? () => resolvePlaybackForDirectUrl(audioId)
       : () => fetchRecordingById(audioId);
 
     return withLatestSelection('loadingItem', fetcher, async (result) => {
+      setSelectionRouteState(nextRouteState);
       await applyAudioResult(result, {
         itemUids: updates.itemUids,
         itemRouteIds: updates.itemRouteIds,
@@ -330,6 +338,7 @@ export function useRadioController() {
     };
 
     setOverrideAudio(true);
+    setSelectionRouteState({ source: null, uid: null, audioUrl: null });
 
     if (!isOn) {
       dispatch({ type: 'SET_PLAYBACK', payload: null });
@@ -504,14 +513,10 @@ export function useRadioController() {
         initYear = availableYears[0];
       }
 
-      if (initialParams.itemId) {
-        setOverrideAudio(true);
-        const numericItemId = Number.parseInt(initialParams.itemId, 10);
-        const isUidOnly = Number.isFinite(numericItemId) && String(numericItemId) === String(initialParams.itemId);
-        const isImportedDirectUrl = isDirectAudioUrl(initialParams.itemId);
-
-        if (isUidOnly || isImportedDirectUrl) {
-          const result = await loadAudioById(initialParams.itemId, initYear);
+      if (initialParams.itemId || initialParams.uid || initialParams.audioUrl) {
+        if (initialParams.source === 'uid' && initialParams.uid) {
+          setOverrideAudio(true);
+          const result = await loadAudioById(initialParams.uid, initYear);
 
           if (result?.metadata?.date) {
             const metadataYear = Number.parseInt(result.metadata.date, 10);
@@ -529,10 +534,37 @@ export function useRadioController() {
           } else {
             dispatch({ type: 'SET_YEAR', payload: initYear });
           }
-        } else {
+        } else if (initialParams.source === 'audio-url' && initialParams.audioUrl) {
+          setOverrideAudio(true);
+          const result = await loadAudioById(initialParams.audioUrl, initYear, {
+            routeState: { source: 'audio-url', uid: null, audioUrl: initialParams.audioUrl }
+          });
+
+          if (result?.metadata?.date) {
+            const metadataYear = Number.parseInt(result.metadata.date, 10);
+            if (Number.isFinite(metadataYear)) {
+              if (!availableYears.includes(metadataYear)) {
+                setAvailableYears((prev) => [...prev, metadataYear].sort((a, b) => a - b));
+                setCatalog((prev) => ({
+                  entries: mergeCatalogYearEntry(prev?.entries, metadataYear, { itemCount: null, status: 'manifest' }),
+                  source: prev?.source || null,
+                  generatedAt: prev?.generatedAt || null
+                }));
+              }
+              dispatch({ type: 'SET_YEAR', payload: metadataYear });
+            }
+          } else {
+            dispatch({ type: 'SET_YEAR', payload: initYear });
+          }
+        } else if (initialParams.itemId) {
+          setSelectionRouteState({ source: null, uid: null, audioUrl: null });
           dispatch({ type: 'SET_YEAR', payload: initYear });
           skipNextYearLoadRef.current = true;
           await loadYearAudio(initYear, initialParams.itemId);
+        } else {
+          dispatch({ type: 'SET_YEAR', payload: initYear });
+          skipNextYearLoadRef.current = true;
+          await loadYearAudio(initYear);
         }
       } else {
         dispatch({ type: 'SET_YEAR', payload: initYear });
@@ -580,9 +612,10 @@ export function useRadioController() {
       itemUids,
       itemRouteIds,
       itemIndex,
-      itemId: currentItemId
+      itemId: currentItemId,
+      routeState: selectionRouteState
     });
-  }, [currentItemId, error, initComplete, isOn, itemIndex, itemRouteIds, itemUids, loadAudioById, playback?.primaryUrl, sessionStatus, year]);
+  }, [currentItemId, error, initComplete, isOn, itemIndex, itemRouteIds, itemUids, loadAudioById, playback?.primaryUrl, selectionRouteState, sessionStatus, year]);
 
   useEffect(() => {
     if (!initComplete) {
@@ -592,11 +625,14 @@ export function useRadioController() {
     const nextUrl = serializeRadioUrlState({
       year,
       autoplay: isOn,
-      itemId: currentItemId || null
+      itemId: selectionRouteState.source === 'audio-url' ? null : (currentItemId || null),
+      source: selectionRouteState.source,
+      uid: selectionRouteState.uid,
+      audioUrl: selectionRouteState.audioUrl
     });
 
     window.history.replaceState({}, '', nextUrl);
-  }, [currentItemId, initComplete, isOn, year]);
+  }, [currentItemId, initComplete, isOn, selectionRouteState, year]);
 
   const currentStableItemId = useMemo(
     () => getStableItemId(currentItemId, metadata),

@@ -195,7 +195,7 @@ describe('useRadioController', () => {
       itemId: 'https://media.example/imported.wav'
     });
 
-    window.history.replaceState({}, '', '/?year=1940&itemId=https%3A%2F%2Fmedia.example%2Fimported.wav&autoplay=true');
+    window.history.replaceState({}, '', '/?year=1940&source=audio-url&audioUrl=https%3A%2F%2Fmedia.example%2Fimported.wav&autoplay=true');
 
     const { result } = renderHook(() => useRadioController());
 
@@ -209,6 +209,36 @@ describe('useRadioController', () => {
       primaryUrl: 'https://media.example/imported.wav',
       mimeType: 'audio/wav',
     });
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(
+      {},
+      '',
+      '/?year=1940&source=audio-url&audioUrl=https%3A%2F%2Fmedia.example%2Fimported.wav&autoplay=true'
+    );
+  });
+
+  it('boots through the uid route state without guessing from numeric-looking item ids', async () => {
+    fetchAvailableYears.mockResolvedValue({
+      years: [1940],
+      entries: [{ year: 1940, itemCount: 1, sampleItemIds: ['111'], status: 'ready' }],
+      source: 'catalog-test',
+      generatedAt: '2026-03-18T00:00:00.000Z',
+      error: null
+    });
+    fetchRecordingById.mockResolvedValue({
+      playback: createPlayback('https://cdn.example/uid.mp3'),
+      metadata: { title: 'UID Item', date: '1940', uid: '111' },
+      error: null,
+      itemId: 'loc-1940-first'
+    });
+
+    window.history.replaceState({}, '', '/?year=1940&source=uid&uid=111');
+
+    const { result } = renderHook(() => useRadioController());
+
+    await waitFor(() => expect(result.current.initComplete).toBe(true));
+
+    expect(fetchRecordingById).toHaveBeenCalledWith('111');
+    expect(window.history.replaceState).toHaveBeenLastCalledWith({}, '', '/?year=1940&itemId=loc-1940-first');
   });
 
   it('persists favorites by stable id without leaking them into shareable route state', async () => {
