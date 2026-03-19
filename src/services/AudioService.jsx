@@ -28,7 +28,11 @@ import {
 } from './offlineStore';
 
 const BASE_URL = 'https://www.loc.gov';
-const AUDIO_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
+const YEAR_SELECTION_CACHE_TTL = 14 * 24 * 60 * 60 * 1000;
+const ITEM_METADATA_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
+const DEFAULT_PLAYBACK_URL_CACHE_TTL = 24 * 60 * 60 * 1000;
+const LOC_PLAYBACK_URL_CACHE_TTL = 60 * 60 * 1000;
+const DIRECT_PLAYBACK_URL_CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
 const CATALOG_CACHE_TTL = 24 * 60 * 60 * 1000;
 const LOC_API_COOLDOWN_MS = 30 * 1000;
 const LOC_API_FAILURE_THRESHOLD = 2;
@@ -45,6 +49,85 @@ function buildFreshness(ttl, now = Date.now()) {
     fetchedAt: now,
     expiresAt: ttl ? now + ttl : null,
   };
+}
+
+function resolvePlaybackCacheTtl(result) {
+  const primaryUrl = normalizeText(result?.playback?.primaryUrl || result?.audioUrl);
+  if (!primaryUrl) {
+    return 0;
+  }
+
+  if (normalizeText(result?.source) === 'direct-audio-link') {
+    return DIRECT_PLAYBACK_URL_CACHE_TTL;
+  }
+
+  if (isCrossOriginLocAudioResource(primaryUrl) || primaryUrl.includes('loc.gov')) {
+    return LOC_PLAYBACK_URL_CACHE_TTL;
+  }
+
+  return DEFAULT_PLAYBACK_URL_CACHE_TTL;
+}
+
+function buildResultFreshness(result, now = Date.now()) {
+  const metadataFreshness = buildFreshness(ITEM_METADATA_CACHE_TTL, now);
+  const playbackTtl = resolvePlaybackCacheTtl(result);
+
+  return {
+    selectionFreshness: buildFreshness(YEAR_SELECTION_CACHE_TTL, now),
+    metadataFreshness,
+    playbackFreshness: result?.playback?.primaryUrl ? buildFreshness(playbackTtl, now) : null,
+    freshness: {
+      ...metadataFreshness,
+      playback: result?.playback?.primaryUrl ? buildFreshness(playbackTtl, now) : buildFreshness(0, now),
+    },
+  };
+}
+
+function withResultFreshness(result, now = Date.now()) {
+  if (!result) return result;
+  const freshness = buildResultFreshness(result, now);
+  return {
+    ...result,
+    freshness: freshness.freshness,
+  };
+}
+
+function isFreshnessValid(freshness) {
+  if (!freshness) return false;
+  if (freshness.expiresAt != null) {
+    return Date.now() < freshness.expiresAt;
+  }
+  if (freshness.fetchedAt == null) {
+    return false;
+  }
+  return true;
+}
+
+function canReuseMemoryAudioResult(result) {
+  if (!result) return false;
+  if (result?.source === 'direct-audio-link') return true;
+  if (result?.resolution?.pendingAudio || result?.stalePlayback) return false;
+
+  if (result?.playback?.primaryUrl) {
+    return isFreshnessValid(result?.freshness?.playback);
+  }
+
+  return isFreshnessValid(result?.freshness);
+}
+
+function createMetadataOnlyPendingResult(result, source = 'cached-item-metadata') {
+  if (!result?.metadata && !result?.itemId) {
+    return null;
+  }
+
+  return normalizeAudioResult({
+    ...result,
+    playback: null,
+    error: null,
+    source,
+    pendingAudio: true,
+    stalePlayback: true,
+  });
 }
 const CATALOG_PAGE_SIZE = 100;
 const MAX_CATALOG_SAMPLE_IDS = 3;
@@ -196,6 +279,8 @@ function buildSharedAudioResult(result = {}) {
     itemId,
     metadata,
     playback,
+    pendingAudio: Boolean(result.pendingAudio),
+    stalePlayback: Boolean(result.stalePlayback),
     recording,
     resolution: {
       source: result.source || null,
@@ -641,7 +726,7 @@ async function loadAudioByYearFromDataset(year, requestedIdentity = null, option
 
   const selectedItem = manifest.selectedItem;
   if (!selectedItem) {
-    const emptyResult = normalizeAudioResult({
+    const emptyResult = withResultFreshness(normalizeAudioResult({
       playback: null,
       metadata: null,
       error: 'No playable audio found for this year.',
@@ -649,17 +734,21 @@ async function loadAudioByYearFromDataset(year, requestedIdentity = null, option
       itemRouteIds: manifest.itemRouteIds || [],
       itemId: null,
       source: manifest.source || 'static-dataset-year-manifest',
-    });
+    }));
+    const freshness = buildResultFreshness(emptyResult);
     await saveYearSelection(year, normalizedIdentity, emptyResult, null, {
-      ttl: AUDIO_CACHE_TTL,
-      freshness: buildFreshness(AUDIO_CACHE_TTL),
+      selectionTtl: YEAR_SELECTION_CACHE_TTL,
+      metadataTtl: ITEM_METADATA_CACHE_TTL,
+      playbackTtl: resolvePlaybackCacheTtl(emptyResult),
+      freshness: freshness.selectionFreshness,
+      playbackFreshness: freshness.playbackFreshness,
       datasetVersion: CURRENT_DATASET_VERSION,
     });
     return emptyResult;
   }
 
   if (deferAudio) {
-    const deferredResult = normalizeAudioResult({
+    const deferredResult = withResultFreshness(normalizeAudioResult({
       playback: null,
       metadata: buildMetadata(selectedItem, selectedItem, year),
       error: null,
@@ -668,12 +757,16 @@ async function loadAudioByYearFromDataset(year, requestedIdentity = null, option
       itemId: manifest.selectedItemIdentity,
       source: manifest.source || 'static-dataset-selection',
       pendingAudio: true,
-    });
+    }));
     const deferredItemRecord = buildItemRecord(deferredResult, selectedItem.routeId || selectedItem.uid);
+    const freshness = buildResultFreshness(deferredResult);
 
     await saveYearSelection(year, normalizedIdentity, deferredResult, deferredItemRecord, {
-      ttl: AUDIO_CACHE_TTL,
-      freshness: buildFreshness(AUDIO_CACHE_TTL),
+      selectionTtl: YEAR_SELECTION_CACHE_TTL,
+      metadataTtl: ITEM_METADATA_CACHE_TTL,
+      playbackTtl: resolvePlaybackCacheTtl(deferredResult),
+      freshness: freshness.selectionFreshness,
+      playbackFreshness: freshness.playbackFreshness,
       datasetVersion: CURRENT_DATASET_VERSION,
     });
     return deferredResult;
@@ -689,17 +782,21 @@ async function loadAudioByYearFromDataset(year, requestedIdentity = null, option
     return null;
   }
 
-  const result = buildDatasetAudioResult(datasetRecord, {
+  const result = withResultFreshness(buildDatasetAudioResult(datasetRecord, {
     year,
     manifest,
     selectedItem,
     source: datasetRecord.source || 'static-dataset-item',
-  });
+  }));
   const itemRecord = buildItemRecord(result, manifest.selectedItemIdentity || selectedItem.routeId || selectedItem.uid);
+  const freshness = buildResultFreshness(result);
 
   await saveYearSelection(year, normalizedIdentity, result, itemRecord, {
-    ttl: AUDIO_CACHE_TTL,
-    freshness: buildFreshness(AUDIO_CACHE_TTL),
+    selectionTtl: YEAR_SELECTION_CACHE_TTL,
+    metadataTtl: ITEM_METADATA_CACHE_TTL,
+    playbackTtl: resolvePlaybackCacheTtl(result),
+    freshness: freshness.selectionFreshness,
+    playbackFreshness: freshness.playbackFreshness,
     datasetVersion: CURRENT_DATASET_VERSION,
   });
 
@@ -935,20 +1032,28 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
       const itemRouteIds = manifest?.itemRouteIds || [];
 
       if (!selectedItem) {
-        const result = normalizeAudioResult({
+        const result = withResultFreshness(normalizeAudioResult({
           playback: null,
           metadata: null,
           error: 'No playable audio found for this year.',
           itemUids: [],
           itemRouteIds: []
-        });
+        }));
+        const freshness = buildResultFreshness(result);
         audioCache.set(cacheKey, result);
-        await saveYearSelection(year, normalizedIdentity, result, null, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL), datasetVersion: CURRENT_DATASET_VERSION });
+        await saveYearSelection(year, normalizedIdentity, result, null, {
+          selectionTtl: YEAR_SELECTION_CACHE_TTL,
+          metadataTtl: ITEM_METADATA_CACHE_TTL,
+          playbackTtl: resolvePlaybackCacheTtl(result),
+          freshness: freshness.selectionFreshness,
+          playbackFreshness: freshness.playbackFreshness,
+          datasetVersion: CURRENT_DATASET_VERSION,
+        });
         return result;
       }
 
       if (deferAudio) {
-        const deferredResult = normalizeAudioResult({
+        const deferredResult = withResultFreshness(normalizeAudioResult({
           playback: null,
           metadata: buildMetadata(selectedItem, selectedItem, year),
           error: null,
@@ -957,11 +1062,19 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
           itemId: manifest.selectedItemIdentity,
           source: 'loc-search-selection',
           pendingAudio: true
-        });
+        }));
         const deferredItemRecord = buildItemRecord(deferredResult, selectedItem.routeId || selectedItem.uid);
+        const freshness = buildResultFreshness(deferredResult);
 
         audioCache.set(cacheKey, deferredResult);
-        await saveYearSelection(year, normalizedIdentity, deferredResult, deferredItemRecord, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL), datasetVersion: CURRENT_DATASET_VERSION });
+        await saveYearSelection(year, normalizedIdentity, deferredResult, deferredItemRecord, {
+          selectionTtl: YEAR_SELECTION_CACHE_TTL,
+          metadataTtl: ITEM_METADATA_CACHE_TTL,
+          playbackTtl: resolvePlaybackCacheTtl(deferredResult),
+          freshness: freshness.selectionFreshness,
+          playbackFreshness: freshness.playbackFreshness,
+          datasetVersion: CURRENT_DATASET_VERSION,
+        });
         return deferredResult;
       }
 
@@ -972,20 +1085,28 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
       const playback = extractPlaybackFromResources(itemData);
 
       if (!playback.primaryUrl) {
-        const result = normalizeAudioResult({
+        const result = withResultFreshness(normalizeAudioResult({
           playback,
           metadata: null,
           error: 'No audio URL available for this item.',
           itemUids,
           itemRouteIds
-        });
+        }));
+        const freshness = buildResultFreshness(result);
         audioCache.set(cacheKey, result);
-        await saveYearSelection(year, normalizedIdentity, result, null, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL), datasetVersion: CURRENT_DATASET_VERSION });
+        await saveYearSelection(year, normalizedIdentity, result, null, {
+          selectionTtl: YEAR_SELECTION_CACHE_TTL,
+          metadataTtl: ITEM_METADATA_CACHE_TTL,
+          playbackTtl: resolvePlaybackCacheTtl(result),
+          freshness: freshness.selectionFreshness,
+          playbackFreshness: freshness.playbackFreshness,
+          datasetVersion: CURRENT_DATASET_VERSION,
+        });
         return result;
       }
 
       const metadata = buildMetadata(itemData, selectedItem, year);
-      const result = normalizeAudioResult({
+      const result = withResultFreshness(normalizeAudioResult({
         playback,
         metadata,
         error: null,
@@ -993,11 +1114,19 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
         itemRouteIds,
         itemId: normalizeText(getItemRouteId(selectedItem, itemData) || selectedItemIdentity) || null,
         source: 'loc-item-search'
-      });
+      }));
       const itemRecord = buildItemRecord(result, itemData.id || selectedItemIdentity);
+      const freshness = buildResultFreshness(result);
 
       audioCache.set(cacheKey, result);
-      await saveYearSelection(year, normalizedIdentity, result, itemRecord, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL), datasetVersion: CURRENT_DATASET_VERSION });
+      await saveYearSelection(year, normalizedIdentity, result, itemRecord, {
+        selectionTtl: YEAR_SELECTION_CACHE_TTL,
+        metadataTtl: ITEM_METADATA_CACHE_TTL,
+        playbackTtl: resolvePlaybackCacheTtl(result),
+        freshness: freshness.selectionFreshness,
+        playbackFreshness: freshness.playbackFreshness,
+        datasetVersion: CURRENT_DATASET_VERSION,
+      });
       return result;
     } catch (error) {
       if (!isLocApiUnavailableError(error)) {
@@ -1014,7 +1143,7 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
         return normalizedStaleResult;
       }
 
-      const result = normalizeAudioResult({
+      const result = withResultFreshness(normalizeAudioResult({
         playback: null,
         metadata: null,
         error: isLocApiUnavailableError(error)
@@ -1022,9 +1151,17 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
           : 'Error fetching audio. Try another year.',
         itemUids: [],
         itemRouteIds: []
-      });
+      }));
+      const freshness = buildResultFreshness(result);
       audioCache.set(cacheKey, result);
-      await saveYearSelection(year, normalizedIdentity, result, null, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL), datasetVersion: CURRENT_DATASET_VERSION });
+      await saveYearSelection(year, normalizedIdentity, result, null, {
+        selectionTtl: YEAR_SELECTION_CACHE_TTL,
+        metadataTtl: ITEM_METADATA_CACHE_TTL,
+        playbackTtl: resolvePlaybackCacheTtl(result),
+        freshness: freshness.selectionFreshness,
+        playbackFreshness: freshness.playbackFreshness,
+        datasetVersion: CURRENT_DATASET_VERSION,
+      });
       return result;
     }
   });
@@ -1092,15 +1229,39 @@ function refreshBootstrappedCatalogInBackground() {
 export async function fetchAudioByYear(year, requestedIdentity = null, options = {}) {
   const cacheKey = `${year}-${requestedIdentity || ''}`;
   if (audioCache.has(cacheKey)) {
-    return audioCache.get(cacheKey);
+    const cached = audioCache.get(cacheKey);
+    if (canReuseMemoryAudioResult(cached)) {
+      return cached;
+    }
+    audioCache.delete(cacheKey);
   }
 
   const normalizedIdentity = normalizeRouteIdentity(requestedIdentity);
-  const storedResult = await getYearSelection(year, normalizedIdentity, { ttl: AUDIO_CACHE_TTL, datasetVersion: CURRENT_DATASET_VERSION });
+  const storedResult = await getYearSelection(year, normalizedIdentity, {
+    selectionTtl: YEAR_SELECTION_CACHE_TTL,
+    metadataTtl: ITEM_METADATA_CACHE_TTL,
+    playbackTtl: DEFAULT_PLAYBACK_URL_CACHE_TTL,
+    datasetVersion: CURRENT_DATASET_VERSION,
+  });
   if (storedResult) {
     const normalizedStoredResult = normalizeAudioResult(storedResult);
-    audioCache.set(cacheKey, normalizedStoredResult);
-    return normalizedStoredResult;
+    if (!normalizedStoredResult?.resolution?.pendingAudio && !normalizedStoredResult?.stalePlayback) {
+      audioCache.set(cacheKey, normalizedStoredResult);
+      return normalizedStoredResult;
+    }
+
+    const refreshedResult = await loadAudioByYearFromDataset(year, requestedIdentity, options)
+      || await loadAudioByYearFromSearch(year, requestedIdentity, cacheKey, options);
+
+    if (refreshedResult?.source === 'stale-year-cache') {
+      const metadataOnlyResult = withResultFreshness(createMetadataOnlyPendingResult(normalizedStoredResult, 'stale-playback-metadata-cache'));
+      if (metadataOnlyResult) {
+        audioCache.set(cacheKey, metadataOnlyResult);
+        return metadataOnlyResult;
+      }
+    }
+
+    return refreshedResult;
   }
 
   const datasetResult = await loadAudioByYearFromDataset(year, requestedIdentity, options);
@@ -1188,27 +1349,40 @@ export async function resolvePlaybackForDirectUrl(audioUrl) {
 export async function fetchRecordingById(audioId) {
   const cacheKey = `${audioId}`;
   if (audioCache.has(cacheKey)) {
-    return audioCache.get(cacheKey);
+    const cached = audioCache.get(cacheKey);
+    if (canReuseMemoryAudioResult(cached)) {
+      return cached;
+    }
+    audioCache.delete(cacheKey);
   }
 
   const normalizedLookupId = extractLocItemId(audioId) || normalizeText(audioId);
-  const storedResult = await getItemByLookup(normalizedLookupId, { ttl: AUDIO_CACHE_TTL, datasetVersion: CURRENT_DATASET_VERSION });
+  const storedResult = await getItemByLookup(normalizedLookupId, {
+    metadataTtl: ITEM_METADATA_CACHE_TTL,
+    playbackTtl: DEFAULT_PLAYBACK_URL_CACHE_TTL,
+    datasetVersion: CURRENT_DATASET_VERSION,
+  });
   if (storedResult) {
     const normalizedStoredResult = normalizeAudioResult(storedResult);
-    audioCache.set(cacheKey, normalizedStoredResult);
-    return normalizedStoredResult;
+    if (!normalizedStoredResult?.resolution?.pendingAudio && !normalizedStoredResult?.stalePlayback) {
+      audioCache.set(cacheKey, normalizedStoredResult);
+      return normalizedStoredResult;
+    }
   }
 
   const datasetRecord = await loadItemFromDataset(normalizedLookupId);
   if (datasetRecord) {
-    const datasetResult = buildDatasetAudioResult(datasetRecord, {
+    const datasetResult = withResultFreshness(buildDatasetAudioResult(datasetRecord, {
       source: datasetRecord.source || 'static-dataset-item',
-    });
+    }));
     const itemRecord = buildItemRecord(datasetResult, normalizedLookupId);
     audioCache.set(cacheKey, datasetResult);
+    const freshness = buildResultFreshness(datasetResult);
     await saveItemRecord(itemRecord, {
-      ttl: AUDIO_CACHE_TTL,
-      freshness: buildFreshness(AUDIO_CACHE_TTL),
+      metadataTtl: ITEM_METADATA_CACHE_TTL,
+      playbackTtl: resolvePlaybackCacheTtl(datasetResult),
+      freshness: freshness.metadataFreshness,
+      playbackFreshness: freshness.playbackFreshness,
       datasetVersion: CURRENT_DATASET_VERSION,
     });
     return datasetResult;
@@ -1234,15 +1408,22 @@ export async function fetchRecordingById(audioId) {
       }
 
       const metadata = normalizeMetadata(buildMetadata(selectedItem, selectedItem));
-      const result = normalizeAudioResult({
+      const result = withResultFreshness(normalizeAudioResult({
         playback,
         metadata,
         error: null,
         itemId: getItemRouteId(selectedItem, selectedItem)
-      });
+      }));
       const itemRecord = buildItemRecord(result, selectedItem.id || audioId);
+      const freshness = buildResultFreshness(result);
       audioCache.set(cacheKey, result);
-      await saveItemRecord(itemRecord, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL), datasetVersion: CURRENT_DATASET_VERSION });
+      await saveItemRecord(itemRecord, {
+        metadataTtl: ITEM_METADATA_CACHE_TTL,
+        playbackTtl: resolvePlaybackCacheTtl(result),
+        freshness: freshness.metadataFreshness,
+        playbackFreshness: freshness.playbackFreshness,
+        datasetVersion: CURRENT_DATASET_VERSION,
+      });
       return result;
     } catch (error) {
       console.error('Error fetching audio by id:', error);
@@ -1255,6 +1436,14 @@ export async function fetchRecordingById(audioId) {
         });
         audioCache.set(cacheKey, normalizedStaleResult);
         return normalizedStaleResult;
+      }
+
+      if (storedResult?.metadata) {
+        const metadataOnlyResult = withResultFreshness(createMetadataOnlyPendingResult(storedResult, 'stale-playback-metadata-cache'));
+        if (metadataOnlyResult) {
+          audioCache.set(cacheKey, metadataOnlyResult);
+          return metadataOnlyResult;
+        }
       }
 
       const result = normalizeAudioResult({ playback: null, metadata: null, error: 'Error fetching audio by id.' });

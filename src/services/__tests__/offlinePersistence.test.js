@@ -84,6 +84,55 @@ describe('offline versioned persistence', () => {
     expect(mismatchedYear).toBeNull();
   });
 
+  it('keeps item metadata available after playback freshness expires', async () => {
+    const fetchedAt = Date.now() - (2 * 60 * 60 * 1000);
+
+    await saveYearSelection(
+      1980,
+      null,
+      {
+        playback: createPlayback('https://cdn.example/audio.mp3'),
+        metadata: { title: 'Metadata Survives', date: '1980', uid: '900' },
+        error: null,
+        itemUids: ['900'],
+        itemRouteIds: ['item-900'],
+      },
+      {
+        id: '900',
+        routeId: 'item-900',
+        uid: '900',
+        playback: createPlayback('https://cdn.example/audio.mp3'),
+        metadata: { title: 'Metadata Survives', date: '1980', uid: '900' },
+      },
+      {
+        selectionTtl: 14 * 24 * 60 * 60 * 1000,
+        metadataTtl: 7 * 24 * 60 * 60 * 1000,
+        playbackTtl: 60 * 60 * 1000,
+        freshness: {
+          fetchedAt,
+          expiresAt: fetchedAt + (7 * 24 * 60 * 60 * 1000),
+        },
+        playbackFreshness: {
+          playbackFetchedAt: fetchedAt,
+          playbackExpiresAt: fetchedAt + (60 * 60 * 1000),
+        },
+        datasetVersion: 'manifest-v1',
+      }
+    );
+
+    const matchingYear = await getYearSelection(1980, null, {
+      selectionTtl: 14 * 24 * 60 * 60 * 1000,
+      metadataTtl: 7 * 24 * 60 * 60 * 1000,
+      playbackTtl: 60 * 60 * 1000,
+      datasetVersion: 'manifest-v1',
+    });
+
+    expect(matchingYear?.metadata?.title).toBe('Metadata Survives');
+    expect(matchingYear?.playback).toBeNull();
+    expect(matchingYear?.pendingAudio).toBe(true);
+    expect(matchingYear?.freshness?.playback?.expiresAt).toBe(fetchedAt + (60 * 60 * 1000));
+  });
+
   it('clears stale versioned records deterministically when a new dataset version is applied', async () => {
     await saveYearSelection(
       1980,
