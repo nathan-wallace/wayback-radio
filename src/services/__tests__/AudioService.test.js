@@ -1,4 +1,4 @@
-import { __testing as audioServiceTesting, CURRENT_DATASET_VERSION, fetchAudioByYear, fetchAudioById, fetchAvailableYears } from '../AudioService';
+import { __testing as audioServiceTesting, CURRENT_DATASET_VERSION, fetchAudioByYear, fetchAudioById, fetchAvailableYears, fetchYearManifest } from '../AudioService';
 import { __testing as offlineStoreTesting, saveYearSelection } from '../offlineStore';
 
 function createSearchItem({ id, year, title, audio = true }) {
@@ -172,6 +172,63 @@ describe('fetchAudioByYear', () => {
 });
 
 
+
+
+
+describe('fetchYearManifest', () => {
+  beforeEach(async () => {
+    window.history.replaceState({}, '', 'http://localhost/');
+    delete global.__WAYBACK_ENABLE_BOOTSTRAP_AUTO_REFRESH__;
+    jest.restoreAllMocks();
+    global.fetch = jest.fn();
+    audioServiceTesting.resetCaches();
+    await offlineStoreTesting.resetOfflineStore();
+    localStorage.clear();
+  });
+
+  it('returns ordered route ids, normalized uids, and the selected identity for the requested year', async () => {
+    global.fetch.mockResolvedValueOnce({
+      json: async () => ({
+        results: [
+          createSearchItem({ id: 'default-1980', year: 1980, title: 'Default Choice' }),
+          createSearchItem({ id: 'special-1980', year: 1980, title: 'Special Match Title' }),
+          createSearchItem({ id: 'other-1979', year: 1979, title: 'Wrong year' })
+        ]
+      })
+    });
+
+    const manifest = await fetchYearManifest(1980, 'Special%20Match%20Title');
+
+    expect(manifest.itemRouteIds).toEqual(['default-1980', 'special-1980']);
+    expect(manifest.itemUids).toEqual([]);
+    expect(manifest.selectedItemIdentity).toBe('special-1980');
+    expect(manifest.selectedIndex).toBe(1);
+    expect(manifest.selectedItem).toMatchObject({
+      routeId: 'special-1980',
+      title: 'Special Match Title',
+      date: '1980',
+      hasPlayableAudio: true,
+    });
+    expect(manifest.selectedItem.selectionKeys).toContain('special match title');
+  });
+
+  it('falls back to the first playable item when the requested identity does not match', async () => {
+    global.fetch.mockResolvedValueOnce({
+      json: async () => ({
+        results: [
+          createSearchItem({ id: 'first-1980', year: 1980, title: 'First playable' }),
+          createSearchItem({ id: 'second-1980', year: 1980, title: 'Second playable' })
+        ]
+      })
+    });
+
+    const manifest = await fetchYearManifest(1980, 'Missing%20Identity');
+
+    expect(manifest.itemRouteIds).toEqual(['first-1980', 'second-1980']);
+    expect(manifest.selectedItemIdentity).toBe('first-1980');
+    expect(manifest.selectedIndex).toBe(0);
+  });
+});
 
 describe('available years normalization', () => {
   it('treats object-shaped resources and files as playable', () => {

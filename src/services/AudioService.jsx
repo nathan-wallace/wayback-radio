@@ -19,6 +19,7 @@ const CATALOG_CACHE_TTL = 24 * 60 * 60 * 1000;
 export const datasetUrls = Object.freeze({
   manifest: () => buildDatasetUrl('manifest.json'),
   catalog: () => buildDatasetUrl('catalog.json'),
+  yearManifest: (year) => buildDatasetUrl(`catalog/years/${year}.json`),
   item: (itemId) => buildDatasetUrl(`items/${itemId}.json`),
   audio: (year) => buildDatasetUrl(`audio/${year}.json`)
 });
@@ -34,6 +35,7 @@ const MAX_CATALOG_SAMPLE_IDS = 3;
 const MAX_CATALOG_PAGES = 100;
 
 const audioCache = new Map();
+const yearManifestCache = new Map();
 const requestCache = new Map();
 const locApiState = {
   unavailable: false,
@@ -408,6 +410,137 @@ function getItemRouteId(item, itemData = null) {
   return title ? encodeURIComponent(title) : null;
 }
 
+function buildManifestSelectionKeys(item) {
+  const routeId = normalizeText(item?.routeId);
+  const title = normalizeText(item?.title);
+  const uid = normalizeText(item?.uid || item?.normalizedUid);
+  const explicitSelectionKeys = Array.isArray(item?.selectionKeys)
+    ? item.selectionKeys
+    : Array.isArray(item?.requestedIdentityOrder)
+      ? item.requestedIdentityOrder
+      : [];
+
+  return [
+    ...explicitSelectionKeys,
+    routeId,
+    routeId ? encodeURIComponent(routeId) : null,
+    uid,
+    uid ? `ihas.${uid}` : null,
+    title,
+    title ? encodeURIComponent(title) : null,
+  ]
+    .map((candidate) => normalizeRouteIdentity(candidate))
+    .filter(Boolean)
+    .filter((candidate, index, collection) => collection.indexOf(candidate) === index);
+}
+
+function normalizeYearManifestItem(item, fallbackYear = null, index = 0) {
+  if (!item || typeof item !== 'object') return null;
+
+  const normalizedUid = normalizeText(item.normalizedUid || item.uid) || null;
+  const routeId = normalizeText(item.routeId) || null;
+  const title = normalizeText(item.title) || null;
+  const contributor = normalizeText(item.contributor) || '';
+  const date = normalizeText(item.date || fallbackYear) || null;
+  const hasPlayableAudio = item.hasPlayableAudio !== false;
+
+  return {
+    uid: normalizedUid,
+    normalizedUid,
+    routeId,
+    title,
+    date,
+    contributor,
+    hasPlayableAudio,
+    selectionKeys: buildManifestSelectionKeys({
+      ...item,
+      normalizedUid,
+      uid: normalizedUid,
+      routeId,
+      title,
+    }),
+    order: Number.isFinite(item.order) ? item.order : index,
+  };
+}
+
+function buildYearManifestPayload(year, items = [], requestedIdentity = null, meta = {}) {
+  const normalizedItems = (Array.isArray(items) ? items : [])
+    .map((item, index) => normalizeYearManifestItem(item, year, index))
+    .filter(Boolean)
+    .sort((left, right) => left.order - right.order);
+  const playableItems = normalizedItems.filter((item) => item.hasPlayableAudio);
+  const selectionPool = playableItems.length > 0 ? playableItems : normalizedItems;
+  const normalizedIdentity = normalizeRouteIdentity(requestedIdentity);
+  const selectedIndex = normalizedIdentity
+    ? selectionPool.findIndex((item) => item.selectionKeys.includes(normalizedIdentity))
+    : 0;
+  const selectedItem = selectionPool[selectedIndex >= 0 ? selectedIndex : 0] || null;
+  const itemUids = selectionPool.map((item) => item.normalizedUid).filter(Boolean);
+  const itemRouteIds = selectionPool.map((item) => item.routeId).filter(Boolean);
+  const selectedItemIdentity = selectedItem?.routeId || selectedItem?.normalizedUid || null;
+
+  return {
+    year,
+    items: normalizedItems,
+    itemUids,
+    itemRouteIds,
+    selectedItem,
+    selectedIndex: selectedItem ? selectionPool.indexOf(selectedItem) : -1,
+    selectedItemIdentity,
+    requestedIdentity: normalizedIdentity,
+    source: meta.source || null,
+    generatedAt: meta.generatedAt || null,
+  };
+}
+
+function buildYearManifestFromSearchItems(items, year, requestedIdentity = null) {
+  const playableItems = (Array.isArray(items) ? items : []).filter((item) => isPlayableSearchItem(item));
+  const yearMatches = playableItems.filter((item) => extractYear(item.date) === year);
+  const candidates = yearMatches.length > 0 ? yearMatches : playableItems;
+
+  return buildYearManifestPayload(
+    year,
+    candidates.map((item, index) => ({
+      uid: extractUid(item.id),
+      normalizedUid: extractUid(item.id),
+      routeId: getItemRouteId(item, item),
+      title: normalizeText(item?.title || item?.item?.title),
+      date: normalizeText(item?.date || year),
+      contributor: normalizeText(item?.item?.contributor?.join(', ') || item?.contributor?.join(', ') || ''),
+      hasPlayableAudio: true,
+      selectionKeys: buildItemIdentityVariants(item),
+      order: index,
+    })),
+    requestedIdentity,
+    { source: 'loc-search-manifest' }
+  );
+}
+
+function getBootstrappedYearManifest(year, requestedIdentity = null) {
+  const cached = bootstrapAudioByYear?.[year];
+  if (!cached) return null;
+
+  return buildYearManifestPayload(year, [{
+    uid: normalizeText(cached?.metadata?.uid) || extractUid(cached?.itemId || cached?.title),
+    normalizedUid: normalizeText(cached?.metadata?.uid) || extractUid(cached?.itemId || cached?.title),
+    routeId: normalizeText(cached?.itemId || cached?.title) || null,
+    title: normalizeText(cached?.metadata?.title) || normalizeText(cached?.title) || null,
+    date: normalizeText(cached?.metadata?.date) || String(year),
+    contributor: normalizeText(cached?.metadata?.contributor) || '',
+    hasPlayableAudio: !normalizeBootstrapAudioResult(normalizeAudioResult(cached))?.error,
+    selectionKeys: [
+      cached?.itemId,
+      cached?.title,
+      cached?.metadata?.title,
+      cached?.metadata?.uid,
+    ],
+    order: 0,
+  }], requestedIdentity, {
+    source: cached?.source || archiveCache?.source || 'bootstrap-manifest',
+    generatedAt: archiveCache?.generatedAt || null,
+  });
+}
+
 function selectPlayableItemForYear(items, year, requestedIdentity = null) {
   const playableItems = (Array.isArray(items) ? items : []).filter((item) => isPlayableSearchItem(item));
   const yearMatches = playableItems.filter((item) => extractYear(item.date) === year);
@@ -516,9 +649,12 @@ function getBootstrappedYearResult(year, requestedIdentity = null) {
     return null;
   }
 
+  const manifest = getBootstrappedYearManifest(year, requestedIdentity);
   const result = normalizeBootstrapAudioResult(normalizeAudioResult({
     ...cached,
-    itemId: cached.itemId || cached.title || null,
+    itemId: manifest?.selectedItemIdentity || cached.itemId || cached.title || null,
+    itemUids: manifest?.itemUids || cached.itemUids || [],
+    itemRouteIds: manifest?.itemRouteIds || cached.itemRouteIds || [],
     metadata: cached.metadata ? { ...cached.metadata } : null,
     source: cached.source || archiveCache?.source || 'bootstrap-manifest',
     bootstrap: true
@@ -683,23 +819,42 @@ async function fetchJson(url) {
   }
 }
 
+async function loadYearManifestFromSearch(year, requestedIdentity = null, cacheKey = `${year}-${requestedIdentity || ''}`) {
+  return fetchWithCache(`year-manifest:${cacheKey}`, async () => {
+    const searchUrl = `${BASE_URL}/search/?q=${encodeURIComponent(year)}&fa=original-format:sound+recording|digitized&fo=json`;
+    const searchData = await fetchJson(searchUrl);
+    const items = searchData.results || [];
+    const manifest = buildYearManifestFromSearchItems(items, year, requestedIdentity);
+    yearManifestCache.set(cacheKey, manifest);
+    return manifest;
+  });
+}
+
+export async function fetchYearManifest(year, requestedIdentity = null) {
+  const cacheKey = `${year}-${requestedIdentity || ''}`;
+  if (yearManifestCache.has(cacheKey)) {
+    return yearManifestCache.get(cacheKey);
+  }
+
+  const bootstrappedManifest = getBootstrappedYearManifest(year, requestedIdentity);
+  if (bootstrappedManifest) {
+    yearManifestCache.set(cacheKey, bootstrappedManifest);
+    return bootstrappedManifest;
+  }
+
+  return loadYearManifestFromSearch(year, requestedIdentity, cacheKey);
+}
+
 async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKey = `${year}-${requestedIdentity || ''}`, options = {}) {
   const normalizedIdentity = normalizeRouteIdentity(requestedIdentity);
   const { deferAudio = false } = options;
 
   return fetchWithCache(cacheKey, async () => {
     try {
-      const searchUrl = `${BASE_URL}/search/?q=${encodeURIComponent(year)}&fa=original-format:sound+recording|digitized&fo=json`;
-      const searchData = await fetchJson(searchUrl);
-      const items = searchData.results || [];
-      const { selectedItem, yearMatches, candidates } = selectPlayableItemForYear(items, year, requestedIdentity);
-      const itemCandidates = yearMatches.length > 0 ? yearMatches : candidates;
-      const itemUids = itemCandidates
-        .map((item) => extractUid(item.id))
-        .filter(Boolean);
-      const itemRouteIds = itemCandidates
-        .map((item) => getItemRouteId(item, item))
-        .filter(Boolean);
+      const manifest = await loadYearManifestFromSearch(year, requestedIdentity, cacheKey);
+      const selectedItem = manifest?.selectedItem;
+      const itemUids = manifest?.itemUids || [];
+      const itemRouteIds = manifest?.itemRouteIds || [];
 
       if (!selectedItem) {
         const result = {
@@ -721,19 +876,20 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
           error: null,
           itemUids,
           itemRouteIds,
-          itemId: getItemRouteId(selectedItem, selectedItem),
+          itemId: manifest.selectedItemIdentity,
           source: 'loc-search-selection',
           pendingAudio: true
         });
-        const deferredItemRecord = buildItemRecord(deferredResult, selectedItem.id);
+        const deferredItemRecord = buildItemRecord(deferredResult, selectedItem.routeId || selectedItem.uid);
 
         audioCache.set(cacheKey, deferredResult);
         await saveYearSelection(year, normalizedIdentity, deferredResult, deferredItemRecord, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL), datasetVersion: CURRENT_DATASET_VERSION });
         return deferredResult;
       }
 
-      const itemId = extractLocItemId(selectedItem.id);
-      const itemUrl = `${BASE_URL}/item/${itemId}/?fo=json`;
+      const selectedItemIdentity = manifest.selectedItemIdentity || selectedItem.routeId || selectedItem.uid;
+      const itemLookupId = extractLocItemId(selectedItemIdentity) || (selectedItem?.normalizedUid ? `ihas.${selectedItem.normalizedUid}` : null);
+      const itemUrl = `${BASE_URL}/item/${itemLookupId}/?fo=json`;
       const itemData = await fetchJson(itemUrl);
       const audioUrl = getAudioUrlFromResources(itemData);
 
@@ -757,10 +913,10 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
         error: null,
         itemUids,
         itemRouteIds,
-        itemId: getItemRouteId(selectedItem, itemData),
+        itemId: normalizeText(getItemRouteId(selectedItem, itemData) || selectedItemIdentity) || null,
         source: 'loc-item-search'
       });
-      const itemRecord = buildItemRecord(result, itemData.id || selectedItem.id);
+      const itemRecord = buildItemRecord(result, itemData.id || selectedItemIdentity);
 
       audioCache.set(cacheKey, result);
       await saveYearSelection(year, normalizedIdentity, result, itemRecord, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL), datasetVersion: CURRENT_DATASET_VERSION });
@@ -1029,6 +1185,9 @@ export const __testing = {
   normalizeRouteIdentity,
   selectPlayableItemForYear,
   getItemRouteId,
+  buildManifestSelectionKeys,
+  buildYearManifestPayload,
+  buildYearManifestFromSearchItems,
   normalizeMetadata,
   processLinks,
   buildItemRecord,
@@ -1038,6 +1197,7 @@ export const __testing = {
   getAudioUrlFromResources,
   resetCaches() {
     audioCache.clear();
+    yearManifestCache.clear();
     requestCache.clear();
     availableYearsCache = null;
     bootstrapCatalogRefreshPromise = null;
