@@ -83,14 +83,16 @@ describe('useRadioController', () => {
       generatedAt: '2026-03-18T00:00:00.000Z',
       error: null
     });
-    fetchAudioByYear.mockResolvedValue({
-      playback: createPlayback('https://cdn.example/one.mp3'),
-      metadata: { title: 'First Item', date: '1940', uid: '111' },
+    fetchAudioByYear.mockImplementation(async (_year, itemId) => ({
+      playback: createPlayback(itemId === 'loc-1940-second' ? 'https://cdn.example/two.mp3' : 'https://cdn.example/one.mp3'),
+      metadata: itemId === 'loc-1940-second'
+        ? { title: 'Second Item', date: '1940', uid: '222' }
+        : { title: 'First Item', date: '1940', uid: '111' },
       error: null,
       itemUids: ['111', '222'],
       itemRouteIds: ['loc-1940-first', 'loc-1940-second'],
-      itemId: 'loc-1940-first'
-    });
+      itemId: itemId || 'loc-1940-first'
+    }));
     fetchRecordingById.mockResolvedValue({
       playback: createPlayback('https://cdn.example/two.mp3'),
       metadata: { title: 'Second Item', date: '1940', uid: '222' },
@@ -171,6 +173,86 @@ describe('useRadioController', () => {
     });
   });
 
+
+
+  it('exposes explicit selection and playback-resolution state for deferred selections', async () => {
+    fetchAvailableYears.mockResolvedValue({
+      years: [1940],
+      entries: [{ year: 1940, itemCount: 1, sampleItemIds: ['111'], status: 'ready' }],
+      source: 'catalog-test',
+      generatedAt: '2026-03-18T00:00:00.000Z',
+      error: null
+    });
+    fetchAudioByYear.mockResolvedValue({
+      playback: { primaryUrl: null, mimeType: null, streams: [] },
+      metadata: { title: 'Deferred Item', date: '1940', uid: '111' },
+      error: null,
+      itemUids: ['111'],
+      itemRouteIds: ['loc-1940-first'],
+      itemId: 'loc-1940-first',
+      resolution: {
+        pendingAudio: true,
+        error: null,
+        source: 'loc-search-selection',
+        stale: false,
+        bootstrap: false,
+      }
+    });
+
+    const { result } = renderHook(() => useRadioController());
+
+    await waitFor(() => expect(result.current.initComplete).toBe(true));
+
+    expect(result.current.selectionState).toBe('selected');
+    expect(result.current.playbackResolutionState).toBe('resolving');
+    expect(result.current.playbackResolutionError).toBeNull();
+  });
+
+  it('exposes playback-resolution errors while preserving the selected recording state', async () => {
+    fetchAvailableYears.mockResolvedValue({
+      years: [1940],
+      entries: [{ year: 1940, itemCount: 1, sampleItemIds: ['111'], status: 'ready' }],
+      source: 'catalog-test',
+      generatedAt: '2026-03-18T00:00:00.000Z',
+      error: null
+    });
+    fetchAudioByYear.mockResolvedValue({
+      playback: { primaryUrl: null, mimeType: null, streams: [] },
+      metadata: { title: 'Broken Item', date: '1940', uid: '111' },
+      error: null,
+      itemUids: ['111'],
+      itemRouteIds: ['loc-1940-first'],
+      itemId: 'loc-1940-first',
+      resolution: {
+        pendingAudio: true,
+        error: null,
+        source: 'loc-search-selection',
+        stale: false,
+        bootstrap: false,
+      }
+    });
+    fetchRecordingById.mockResolvedValue({
+      playback: { primaryUrl: null, mimeType: null, streams: [] },
+      metadata: { title: 'Broken Item', date: '1940', uid: '111' },
+      error: 'Unable to resolve audio for this recording.',
+      itemId: 'loc-1940-first'
+    });
+
+    const { result } = renderHook(() => useRadioController());
+
+    await waitFor(() => expect(result.current.initComplete).toBe(true));
+
+    await act(async () => {
+      result.current.setIsOn(true);
+    });
+
+    await waitFor(() => expect(fetchRecordingById).toHaveBeenCalledWith('loc-1940-first'));
+
+    expect(result.current.selectionState).toBe('selected');
+    expect(result.current.playbackResolutionState).toBe('resolutionError');
+    expect(result.current.playbackResolutionError).toBe('Unable to resolve audio for this recording.');
+    expect(result.current.metadata).toMatchObject({ title: 'Broken Item' });
+  });
 
   it('uses the direct-playback path for explicit imported audio URLs', async () => {
     fetchAvailableYears.mockResolvedValue({

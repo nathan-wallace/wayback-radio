@@ -58,6 +58,7 @@ function choosePlayablePlayback(playback) {
 export const useAudioManager = (playback, isOn, volume) => {
   const [sound, setSound] = useState(null);
   const [transportState, setTransportState] = useState('paused');
+  const [transportError, setTransportError] = useState(null);
   const pauseTimerRef = useRef(null);
   const fadeTimerRef = useRef(null);
   const isOnRef = useRef(isOn);
@@ -91,12 +92,14 @@ export const useAudioManager = (playback, isOn, volume) => {
       activeSoundRef.current = null;
       setSound(null);
       setTransportState('paused');
+      setTransportError(null);
       clearPendingTimers();
       return undefined;
     }
 
     clearPendingTimers();
     setTransportState('paused');
+    setTransportError(null);
 
     const newSound = new Howl({
       src: playablePlayback.src,
@@ -110,6 +113,7 @@ export const useAudioManager = (playback, isOn, volume) => {
         }
 
         clearPendingTimers();
+        setTransportError(null);
 
         if (!isOnRef.current) {
           newSound.pause();
@@ -139,21 +143,23 @@ export const useAudioManager = (playback, isOn, volume) => {
         clearPendingTimers();
         setTransportState('paused');
       },
-      onplayerror: () => {
+      onplayerror: (_soundId, playbackError) => {
         if (activeSoundRef.current !== newSound) {
           return;
         }
 
         clearPendingTimers();
-        setTransportState('paused');
+        setTransportState('blocked');
+        setTransportError(playbackError || 'Playback was blocked before the audio could start.');
       },
-      onloaderror: () => {
+      onloaderror: (_soundId, playbackError) => {
         if (activeSoundRef.current !== newSound) {
           return;
         }
 
         clearPendingTimers();
-        setTransportState('paused');
+        setTransportState('error');
+        setTransportError(playbackError || 'The audio stream could not be loaded.');
       }
     });
 
@@ -168,6 +174,7 @@ export const useAudioManager = (playback, isOn, volume) => {
       newSound.stop();
       newSound.unload();
       setTransportState('paused');
+      setTransportError(null);
     };
   }, [clearPendingTimers, playback]);
 
@@ -180,6 +187,7 @@ export const useAudioManager = (playback, isOn, volume) => {
 
     if (isOn) {
       if (!sound.playing()) {
+        setTransportError(null);
         setTransportState('buffering');
         sound.play();
       } else {
@@ -187,6 +195,7 @@ export const useAudioManager = (playback, isOn, volume) => {
         fadeTimerRef.current = setTimeout(() => {
           fadeTimerRef.current = null;
         }, FADE_DURATION_MS);
+        setTransportError(null);
         setTransportState('playing');
       }
     } else {
@@ -216,5 +225,5 @@ export const useAudioManager = (playback, isOn, volume) => {
     }
   }, [transportState, volume, sound]);
 
-  return { sound, transportState };
+  return { sound, transportState, transportError };
 };

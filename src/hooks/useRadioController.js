@@ -40,6 +40,9 @@ const initialState = {
   itemIndex: 0,
   currentItemId: null,
   sessionStatus: 'booting',
+  selectionState: 'none',
+  playbackResolutionState: 'idle',
+  playbackResolutionError: null,
   error: null,
 };
 
@@ -102,10 +105,28 @@ function radioReducer(state, action) {
       return { ...state, currentItemId: action.payload };
     case 'SET_SESSION_STATUS':
       return { ...state, sessionStatus: action.payload };
+    case 'SET_SELECTION_STATE':
+      return { ...state, selectionState: action.payload };
+    case 'SET_PLAYBACK_RESOLUTION_STATE':
+      return { ...state, playbackResolutionState: action.payload };
+    case 'SET_PLAYBACK_RESOLUTION_ERROR':
+      return { ...state, playbackResolutionError: action.payload };
     case 'SET_ERROR':
       return { ...state, error: action.payload };
     case 'APPLY_AUDIO_RESULT': {
-      const { playback, metadata, error, itemUids, itemRouteIds, itemIndex, itemId, sessionStatus } = action.payload;
+      const {
+        playback,
+        metadata,
+        error,
+        itemUids,
+        itemRouteIds,
+        itemIndex,
+        itemId,
+        sessionStatus,
+        selectionState,
+        playbackResolutionState,
+        playbackResolutionError
+      } = action.payload;
       return {
         ...state,
         playback,
@@ -116,6 +137,9 @@ function radioReducer(state, action) {
         itemIndex: itemIndex ?? state.itemIndex,
         currentItemId: itemId ?? state.currentItemId,
         sessionStatus,
+        selectionState: selectionState ?? state.selectionState,
+        playbackResolutionState: playbackResolutionState ?? state.playbackResolutionState,
+        playbackResolutionError: playbackResolutionError ?? state.playbackResolutionError,
       };
     }
     default:
@@ -159,6 +183,38 @@ function buildItemRecordIndex(items = []) {
   }, {});
 }
 
+function deriveSelectionState(result, fallbackItemId = null) {
+  return (result?.metadata || result?.itemId || fallbackItemId) ? 'selected' : 'none';
+}
+
+function derivePlaybackResolutionState(result, isResolving = false) {
+  if (isResolving) {
+    return 'resolving';
+  }
+
+  if (result?.resolution?.pendingAudio) {
+    return 'resolving';
+  }
+
+  if (result?.playback?.primaryUrl) {
+    return 'ready';
+  }
+
+  if (result?.error) {
+    return /blocked/i.test(result.error) ? 'blocked' : 'resolutionError';
+  }
+
+  return result?.metadata ? 'ready' : 'idle';
+}
+
+function derivePlaybackResolutionError(result) {
+  if (!result?.error) {
+    return null;
+  }
+
+  return derivePlaybackResolutionState(result) === 'ready' ? null : result.error;
+}
+
 export function useRadioController() {
   const [state, dispatch] = useReducer(radioReducer, initialState);
   const [initialParams] = useState(parseInitialParams);
@@ -192,6 +248,9 @@ export function useRadioController() {
     itemIndex,
     currentItemId,
     sessionStatus,
+    selectionState,
+    playbackResolutionState,
+    playbackResolutionError,
     error
   } = state;
 
@@ -224,6 +283,9 @@ export function useRadioController() {
   const setItemRouteIds = useCallback((routeIds) => dispatch({ type: 'SET_ITEM_ROUTE_IDS', payload: routeIds }), []);
   const setItemIndex = useCallback((index) => dispatch({ type: 'SET_ITEM_INDEX', payload: index }), []);
   const setSessionStatus = useCallback((nextStatus) => dispatch({ type: 'SET_SESSION_STATUS', payload: nextStatus }), []);
+  const setSelectionState = useCallback((nextState) => dispatch({ type: 'SET_SELECTION_STATE', payload: nextState }), []);
+  const setPlaybackResolutionState = useCallback((nextState) => dispatch({ type: 'SET_PLAYBACK_RESOLUTION_STATE', payload: nextState }), []);
+  const setPlaybackResolutionError = useCallback((nextError) => dispatch({ type: 'SET_PLAYBACK_RESOLUTION_ERROR', payload: nextError }), []);
   const setError = useCallback((nextError) => dispatch({ type: 'SET_ERROR', payload: nextError }), []);
 
   const syncStateForResult = useCallback(async (result) => {
@@ -246,7 +308,10 @@ export function useRadioController() {
         itemRouteIds: updates.itemRouteIds,
         itemIndex: updates.itemIndex,
         itemId: updates.itemId ?? result.itemId ?? result.metadata?.uid ?? null,
-        sessionStatus: result.error ? 'error' : 'ready'
+        sessionStatus: result.error ? 'error' : 'ready',
+        selectionState: deriveSelectionState(result, updates.itemId),
+        playbackResolutionState: derivePlaybackResolutionState(result),
+        playbackResolutionError: derivePlaybackResolutionError(result)
       }
     });
 
@@ -261,6 +326,8 @@ export function useRadioController() {
   const withLatestSelection = useCallback(async (status, fetcher, onSuccess) => {
     const requestId = ++selectionRequestRef.current;
     setSessionStatus(status);
+    setPlaybackResolutionState(status === 'loadingItem' ? 'resolving' : 'idle');
+    setPlaybackResolutionError(null);
     setError(null);
 
     const result = await fetcher();
@@ -271,7 +338,7 @@ export function useRadioController() {
     await onSuccess(result);
     await syncStateForResult(result);
     return result;
-  }, [setError, setSessionStatus, syncStateForResult]);
+  }, [setError, setPlaybackResolutionError, setPlaybackResolutionState, setSessionStatus, syncStateForResult]);
 
   const prefetchAdjacentYears = useCallback((targetYear, years) => {
     const currentIndex = years.indexOf(targetYear);
@@ -341,17 +408,12 @@ export function useRadioController() {
     setSelectionRouteState({ source: null, uid: null, audioUrl: null });
 
     if (!isOn) {
-      dispatch({ type: 'SET_PLAYBACK', payload: null });
-      dispatch({ type: 'SET_METADATA', payload: null });
-      dispatch({ type: 'SET_ERROR', payload: null });
-      dispatch({ type: 'SET_ITEM_INDEX', payload: idx });
-      dispatch({ type: 'SET_CURRENT_ITEM_ID', payload: targetItemId });
-      dispatch({ type: 'SET_SESSION_STATUS', payload: 'ready' });
+      await loadYearAudio(year, targetItemId);
       return;
     }
 
     await loadAudioById(targetItemId, year, selectionUpdates);
-  }, [isOn, itemRouteIds, itemUids, loadAudioById, year]);
+  }, [isOn, itemRouteIds, itemUids, loadAudioById, loadYearAudio, year]);
 
   const nextItem = useCallback(() => {
     if (itemIndex < itemUids.length - 1) {
@@ -483,13 +545,16 @@ export function useRadioController() {
       setError(buildEmptyMessage(yearsError));
       dispatch({ type: 'SET_YEAR', payload: null });
       dispatch({ type: 'SET_CURRENT_ITEM_ID', payload: null });
+      setSelectionState('none');
+      setPlaybackResolutionState('idle');
+      setPlaybackResolutionError(null);
       setSessionStatus(yearsError ? 'error' : 'empty');
       setInitComplete(true);
       initHandledRef.current = true;
     }
 
     loadYears();
-  }, [refreshOfflineLibrary, refreshOfflineState, setAvailableYears, setCatalog, setError, setSessionStatus]);
+  }, [refreshOfflineLibrary, refreshOfflineState, setAvailableYears, setCatalog, setError, setPlaybackResolutionError, setPlaybackResolutionState, setSelectionState, setSessionStatus]);
 
   useEffect(() => {
     if (availableYears.length === 0 || initHandledRef.current) {
@@ -709,6 +774,12 @@ export function useRadioController() {
     setError,
     sessionStatus,
     setSessionStatus,
+    selectionState,
+    setSelectionState,
+    playbackResolutionState,
+    setPlaybackResolutionState,
+    playbackResolutionError,
+    setPlaybackResolutionError,
     isLoading: sessionStatus === 'booting' || sessionStatus === 'loadingYear' || sessionStatus === 'loadingItem',
     initComplete,
     overrideAudio,
@@ -750,10 +821,13 @@ export function useRadioController() {
     overrideAudio,
     playItemByIndex,
     playback,
+    playbackResolutionError,
+    playbackResolutionState,
     prevItem,
     refreshOfflineState,
     resetFilters,
     screenRef,
+    selectionState,
     sessionStatus,
     setPlayback,
     setAvailableYears,
@@ -763,6 +837,9 @@ export function useRadioController() {
     setItemUids,
     setItemRouteIds,
     setMetadata,
+    setPlaybackResolutionError,
+    setPlaybackResolutionState,
+    setSelectionState,
     setSessionStatus,
     setVolume,
     setYearValue,

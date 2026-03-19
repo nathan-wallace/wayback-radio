@@ -43,7 +43,7 @@ export default function Radio() {
     initComplete,
     sessionStatus
   } = controller;
-  const { transportState } = useAudioManager(playback, isOn, volume);
+  const { transportState, transportError } = useAudioManager(playback, isOn, volume);
 
   const catalog = useMemo(
     () => (filteredCatalogEntries.length ? filteredCatalogEntries : buildCatalog(filteredAvailableYears.length ? filteredAvailableYears : availableYears)),
@@ -61,7 +61,8 @@ export default function Radio() {
     availableYearOptions,
     isCatalogLoading: sessionStatus === 'booting' && catalog.length === 0,
     transportState,
-  }), [availableYearOptions, catalog, catalogSource, controller, sessionStatus, transportState]);
+    transportError,
+  }), [availableYearOptions, catalog, catalogSource, controller, sessionStatus, transportError, transportState]);
 
   if (!initComplete) {
     return <div className="radio-loading">Loading…</div>;
