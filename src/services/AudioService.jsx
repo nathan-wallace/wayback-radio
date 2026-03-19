@@ -37,14 +37,17 @@ const bootstrapCatalogEntries = archiveCache?.catalog?.entries
     sampleItemIds: [],
     status: 'manifest'
   }));
-
-let availableYearsCache = bootstrapCatalogEntries.length
+const bootstrapCatalogPayload = bootstrapCatalogEntries.length
   ? buildCatalogPayload(bootstrapCatalogEntries, {
     error: null,
     source: archiveCache?.catalog?.source || archiveCache?.source || 'bootstrap-manifest',
     generatedAt: archiveCache?.catalog?.generatedAt || archiveCache?.generatedAt || null
   })
   : null;
+
+let availableYearsCache = null;
+let bootstrapCatalogRefreshPromise = null;
+const bootstrapYearRefreshPromises = new Map();
 
 function extractUid(itemId) {
   if (!itemId) return null;
@@ -428,6 +431,8 @@ function getBootstrappedYearResult(year, requestedIdentity = null) {
     ...cached,
     itemId: cached.itemId || cached.title || null,
     metadata: cached.metadata ? { ...cached.metadata } : null,
+    source: cached.source || archiveCache?.source || 'bootstrap-manifest',
+    bootstrap: true
   });
   audioCache.set(`${year}-${requestedIdentity || ''}`, result);
   return result;
@@ -575,24 +580,8 @@ async function fetchJson(url) {
   return response.json();
 }
 
-export async function fetchAudioByYear(year, requestedIdentity = null) {
-  const cacheKey = `${year}-${requestedIdentity || ''}`;
-  if (audioCache.has(cacheKey)) {
-    return audioCache.get(cacheKey);
-  }
-
+async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKey = `${year}-${requestedIdentity || ''}`) {
   const normalizedIdentity = normalizeRouteIdentity(requestedIdentity);
-  const storedResult = await getYearSelection(year, normalizedIdentity, { ttl: AUDIO_CACHE_TTL });
-  if (storedResult) {
-    const normalizedStoredResult = normalizeAudioResult(storedResult);
-    audioCache.set(cacheKey, normalizedStoredResult);
-    return normalizedStoredResult;
-  }
-
-  const bootstrappedResult = getBootstrappedYearResult(year, requestedIdentity);
-  if (bootstrappedResult) {
-    return bootstrappedResult;
-  }
 
   return fetchWithCache(cacheKey, async () => {
     try {
@@ -639,7 +628,8 @@ export async function fetchAudioByYear(year, requestedIdentity = null) {
         metadata,
         error: null,
         itemUids,
-        itemId: getItemRouteId(selectedItem, itemData)
+        itemId: getItemRouteId(selectedItem, itemData),
+        source: 'loc-item-search'
       });
       const itemRecord = buildItemRecord(result, itemData.id || selectedItem.id);
 
@@ -670,6 +660,75 @@ export async function fetchAudioByYear(year, requestedIdentity = null) {
       return result;
     }
   });
+}
+
+function refreshBootstrappedYearInBackground(year, requestedIdentity = null, cacheKey = `${year}-${requestedIdentity || ''}`) {
+  if (bootstrapYearRefreshPromises.has(cacheKey)) {
+    return bootstrapYearRefreshPromises.get(cacheKey);
+  }
+
+  const refreshPromise = loadAudioByYearFromSearch(year, requestedIdentity, cacheKey)
+    .catch((error) => {
+      console.error('Error refreshing bootstrapped audio:', error);
+      return null;
+    })
+    .finally(() => {
+      bootstrapYearRefreshPromises.delete(cacheKey);
+    });
+
+  bootstrapYearRefreshPromises.set(cacheKey, refreshPromise);
+  return refreshPromise;
+}
+
+function refreshBootstrappedCatalogInBackground() {
+  if (bootstrapCatalogRefreshPromise) {
+    return bootstrapCatalogRefreshPromise;
+  }
+
+  bootstrapCatalogRefreshPromise = loadCatalogFromSearch()
+    .then(async (catalogPayload) => {
+      availableYearsCache = catalogPayload;
+      await saveCatalogSnapshot({
+        entries: catalogPayload.entries,
+        source: catalogPayload.source,
+        generatedAt: catalogPayload.generatedAt,
+        error: null,
+        freshness: buildFreshness(CATALOG_CACHE_TTL),
+      });
+      return catalogPayload;
+    })
+    .catch((error) => {
+      console.error('Error refreshing bootstrapped catalog:', error);
+      return null;
+    })
+    .finally(() => {
+      bootstrapCatalogRefreshPromise = null;
+    });
+
+  return bootstrapCatalogRefreshPromise;
+}
+
+export async function fetchAudioByYear(year, requestedIdentity = null) {
+  const cacheKey = `${year}-${requestedIdentity || ''}`;
+  if (audioCache.has(cacheKey)) {
+    return audioCache.get(cacheKey);
+  }
+
+  const normalizedIdentity = normalizeRouteIdentity(requestedIdentity);
+  const storedResult = await getYearSelection(year, normalizedIdentity, { ttl: AUDIO_CACHE_TTL });
+  if (storedResult) {
+    const normalizedStoredResult = normalizeAudioResult(storedResult);
+    audioCache.set(cacheKey, normalizedStoredResult);
+    return normalizedStoredResult;
+  }
+
+  const bootstrappedResult = getBootstrappedYearResult(year, requestedIdentity);
+  if (bootstrappedResult) {
+    refreshBootstrappedYearInBackground(year, requestedIdentity, cacheKey);
+    return bootstrappedResult;
+  }
+
+  return loadAudioByYearFromSearch(year, requestedIdentity, cacheKey);
 }
 
 export async function fetchAudioById(audioId) {
@@ -752,12 +811,13 @@ export async function fetchAvailableYears() {
     return availableYearsCache;
   }
 
-  if (bootstrapCatalogEntries.length) {
-    availableYearsCache = buildCatalogPayload(bootstrapCatalogEntries, {
-      error: null,
-      source: archiveCache?.catalog?.source || archiveCache?.source || 'bootstrap-manifest',
-      generatedAt: archiveCache?.catalog?.generatedAt || archiveCache?.generatedAt || null
-    });
+  if (bootstrapCatalogPayload) {
+    availableYearsCache = {
+      ...bootstrapCatalogPayload,
+      source: bootstrapCatalogPayload.source || 'bootstrap-manifest',
+      bootstrap: true
+    };
+    refreshBootstrappedCatalogInBackground();
     return availableYearsCache;
   }
 
@@ -783,11 +843,18 @@ export async function fetchAvailableYears() {
       });
     }
 
-    return buildCatalogPayload(bootstrapCatalogEntries, {
-      error: 'Error fetching available years.',
-      source: archiveCache?.catalog?.source || archiveCache?.source || 'bootstrap-manifest',
-      generatedAt: archiveCache?.catalog?.generatedAt || archiveCache?.generatedAt || null
-    });
+    return bootstrapCatalogPayload
+      ? {
+          ...bootstrapCatalogPayload,
+          error: 'Error fetching available years.',
+          source: bootstrapCatalogPayload.source || 'bootstrap-manifest',
+          bootstrap: true
+        }
+      : buildCatalogPayload([], {
+          error: 'Error fetching available years.',
+          source: 'empty-catalog',
+          generatedAt: null
+        });
   }
 }
 
@@ -811,5 +878,7 @@ export const __testing = {
     audioCache.clear();
     requestCache.clear();
     availableYearsCache = null;
+    bootstrapCatalogRefreshPromise = null;
+    bootstrapYearRefreshPromises.clear();
   },
 };

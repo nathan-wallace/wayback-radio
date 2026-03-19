@@ -1,4 +1,4 @@
-import { __testing as audioServiceTesting, fetchAudioByYear } from '../AudioService';
+import { __testing as audioServiceTesting, fetchAudioByYear, fetchAvailableYears } from '../AudioService';
 import { __testing as offlineStoreTesting, saveYearSelection } from '../offlineStore';
 
 function createSearchItem({ id, year, title, audio = true }) {
@@ -139,5 +139,74 @@ describe('fetchAudioByYear', () => {
     expect(result.source).toBe('stale-year-cache');
     expect(result.audioUrl).toBe('https://cdn.example/stale.mp3');
     expect(result.metadata.title).toBe('Cached Result');
+  });
+});
+
+
+describe('bootstrap manifest behavior', () => {
+  beforeEach(async () => {
+    jest.restoreAllMocks();
+    global.fetch = jest.fn();
+    audioServiceTesting.resetCaches();
+    await offlineStoreTesting.resetOfflineStore();
+    localStorage.clear();
+  });
+
+  it('returns the bootstrap catalog first and refreshes it in the background', async () => {
+    global.fetch.mockResolvedValue({
+      json: async () => ({
+        results: [
+          createSearchItem({ id: 'refreshed-1942', year: 1942, title: 'Refreshed 1942' }),
+          createSearchItem({ id: 'refreshed-1970', year: 1970, title: 'Refreshed 1970' })
+        ],
+        pagination: { total: 2, per_page: 100 }
+      })
+    });
+
+    const initial = await fetchAvailableYears();
+
+    expect(initial.bootstrap).toBe(true);
+    expect(initial.entries.length).toBeGreaterThan(0);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    audioServiceTesting.resetCaches();
+    const refreshed = await fetchAvailableYears();
+
+    expect(refreshed.bootstrap).toBeUndefined();
+    expect(refreshed.entries.map((entry) => entry.year)).toEqual([1942, 1970]);
+  });
+
+  it('uses bootstrap audio as a startup optimization and replaces it after the background refresh completes', async () => {
+    global.fetch
+      .mockResolvedValueOnce({
+        json: async () => ({
+          results: [
+            createSearchItem({ id: 'refreshed-1942', year: 1942, title: 'Refreshed 1942' })
+          ]
+        })
+      })
+      .mockResolvedValueOnce({
+        json: async () => createItemPayload({ id: 'refreshed-1942', year: 1942, title: 'Refreshed 1942' })
+      });
+
+    const initial = await fetchAudioByYear(1942);
+
+    expect(initial.bootstrap).toBe(true);
+    expect(initial.source).toBe('bootstrap-manifest');
+    expect(initial.metadata.title).toBe('The night herding song');
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    audioServiceTesting.resetCaches();
+    const refreshed = await fetchAudioByYear(1942);
+
+    expect(refreshed.bootstrap).toBeUndefined();
+    expect(refreshed.source).toBe('loc-item-search');
+    expect(refreshed.metadata.title).toBe('Refreshed 1942');
   });
 });
