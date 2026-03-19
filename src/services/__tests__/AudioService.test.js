@@ -143,6 +143,31 @@ describe('fetchAudioByYear', () => {
 });
 
 
+
+describe('available years normalization', () => {
+  it('treats object-shaped resources and files as playable', () => {
+    expect(audioServiceTesting.isPlayableSearchItem({
+      resources: {
+        files: {
+          url: 'https://cdn.example/object-shaped.mp3',
+          mimetype: 'audio/mpeg'
+        }
+      }
+    })).toBe(true);
+  });
+
+  it('coerces object-shaped resources when extracting an audio URL', () => {
+    expect(audioServiceTesting.getAudioUrlFromResources({
+      resources: {
+        files: {
+          url: 'https://cdn.example/object-shaped.mp3',
+          mimetype: 'audio/mpeg'
+        }
+      }
+    })).toBe('https://cdn.example/object-shaped.mp3');
+  });
+});
+
 describe('bootstrap manifest behavior', () => {
   beforeEach(async () => {
     jest.restoreAllMocks();

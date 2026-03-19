@@ -386,18 +386,24 @@ function isBootstrapSelectionMatch(cached, requestedIdentity) {
   return candidates.includes(normalizedIdentity);
 }
 
+function asArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value == null) return [];
+  return [value];
+}
+
 function isPlayableResource(resource) {
   return Boolean(
     resource?.audio
     || resource?.url?.match(/\.(mp3|wav)$/i)
-    || resource?.files?.some((file) => (
-      file.mimetype?.includes('audio') || file.url?.match(/\.(mp3|wav)$/i)
+    || asArray(resource?.files).some((file) => (
+      file?.mimetype?.includes('audio') || file?.url?.match(/\.(mp3|wav)$/i)
     ))
   );
 }
 
 function isPlayableSearchItem(item) {
-  return item?.resources?.some((resource) => isPlayableResource(resource));
+  return asArray(item?.resources).some((resource) => isPlayableResource(resource));
 }
 
 function buildItemRecord(result, fallbackId = null) {
@@ -559,17 +565,16 @@ async function loadCatalogFromSearch() {
 }
 
 function getAudioUrlFromResources(itemData) {
-  for (const resource of itemData.resources || []) {
-    if (resource.audio) {
+  for (const resource of asArray(itemData?.resources)) {
+    if (resource?.audio) {
       return resource.audio;
     }
-    if (resource.files) {
-      const audioFile = resource.files.find((file) => (
-        file.mimetype?.includes('audio') || file.url?.match(/\.(mp3|wav)$/i)
-      ));
-      if (audioFile) {
-        return audioFile.url;
-      }
+
+    const audioFile = asArray(resource?.files).find((file) => (
+      file?.mimetype?.includes('audio') || file?.url?.match(/\.(mp3|wav)$/i)
+    ));
+    if (audioFile) {
+      return audioFile.url;
     }
   }
   return null;
@@ -874,6 +879,10 @@ export const __testing = {
   normalizeMetadata,
   processLinks,
   buildItemRecord,
+  asArray,
+  isPlayableResource,
+  isPlayableSearchItem,
+  getAudioUrlFromResources,
   resetCaches() {
     audioCache.clear();
     requestCache.clear();
