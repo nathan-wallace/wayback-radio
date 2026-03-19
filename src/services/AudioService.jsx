@@ -4,6 +4,8 @@ import {
   getCatalogSnapshot,
   getItemByLookup,
   getStaleCatalogSnapshot,
+  getStaleItemByLookup,
+  getStaleYearSelection,
   getYearSelection,
   saveCatalogSnapshot,
   saveItemRecord,
@@ -13,6 +15,13 @@ import {
 const BASE_URL = 'https://www.loc.gov';
 const AUDIO_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const CATALOG_CACHE_TTL = 24 * 60 * 60 * 1000;
+
+function buildFreshness(ttl, now = Date.now()) {
+  return {
+    fetchedAt: now,
+    expiresAt: ttl ? now + ttl : null,
+  };
+}
 const CATALOG_PAGE_SIZE = 100;
 const MAX_CATALOG_SAMPLE_IDS = 3;
 const MAX_CATALOG_PAGES = 100;
@@ -603,7 +612,7 @@ export async function fetchAudioByYear(year, requestedIdentity = null) {
           itemUids: []
         };
         audioCache.set(cacheKey, result);
-        await saveYearSelection(year, normalizedIdentity, result);
+        await saveYearSelection(year, normalizedIdentity, result, null, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL) });
         return result;
       }
 
@@ -620,7 +629,7 @@ export async function fetchAudioByYear(year, requestedIdentity = null) {
           itemUids
         };
         audioCache.set(cacheKey, result);
-        await saveYearSelection(year, normalizedIdentity, result);
+        await saveYearSelection(year, normalizedIdentity, result, null, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL) });
         return result;
       }
 
@@ -635,10 +644,21 @@ export async function fetchAudioByYear(year, requestedIdentity = null) {
       const itemRecord = buildItemRecord(result, itemData.id || selectedItem.id);
 
       audioCache.set(cacheKey, result);
-      await saveYearSelection(year, normalizedIdentity, result, itemRecord);
+      await saveYearSelection(year, normalizedIdentity, result, itemRecord, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL) });
       return result;
     } catch (error) {
       console.error('Error fetching audio:', error);
+      const staleResult = await getStaleYearSelection(year, normalizedIdentity);
+      if (staleResult) {
+        const normalizedStaleResult = normalizeAudioResult({
+          ...staleResult,
+          stale: true,
+          source: 'stale-year-cache'
+        });
+        audioCache.set(cacheKey, normalizedStaleResult);
+        return normalizedStaleResult;
+      }
+
       const result = {
         audioUrl: null,
         metadata: null,
@@ -646,7 +666,7 @@ export async function fetchAudioByYear(year, requestedIdentity = null) {
         itemUids: []
       };
       audioCache.set(cacheKey, result);
-      await saveYearSelection(year, normalizedIdentity, result);
+      await saveYearSelection(year, normalizedIdentity, result, null, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL) });
       return result;
     }
   });
@@ -695,10 +715,21 @@ export async function fetchAudioById(audioId) {
       };
       const itemRecord = buildItemRecord(result, selectedItem.id || audioId);
       audioCache.set(cacheKey, result);
-      await saveItemRecord(itemRecord);
+      await saveItemRecord(itemRecord, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL) });
       return result;
     } catch (error) {
       console.error('Error fetching audio by id:', error);
+      const staleResult = await getStaleItemByLookup(normalizedLookupId);
+      if (staleResult) {
+        const normalizedStaleResult = normalizeAudioResult({
+          ...staleResult,
+          stale: true,
+          source: 'stale-item-cache'
+        });
+        audioCache.set(cacheKey, normalizedStaleResult);
+        return normalizedStaleResult;
+      }
+
       const result = { audioUrl: null, metadata: null, error: 'Error fetching audio by id.' };
       audioCache.set(cacheKey, result);
       return result;
@@ -737,6 +768,7 @@ export async function fetchAvailableYears() {
       source: availableYearsCache.source,
       generatedAt: availableYearsCache.generatedAt,
       error: null,
+      freshness: buildFreshness(CATALOG_CACHE_TTL),
     });
     return availableYearsCache;
   } catch (error) {

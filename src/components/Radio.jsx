@@ -37,7 +37,8 @@ export default function Radio() {
     isOn,
     volume,
     availableYears,
-    catalogEntries,
+    filteredAvailableYears,
+    filteredCatalogEntries,
     catalogSource,
     initComplete,
     sessionStatus
@@ -45,8 +46,8 @@ export default function Radio() {
   const { transportState } = useAudioManager(audioUrl, isOn, volume);
 
   const catalog = useMemo(
-    () => (catalogEntries.length ? catalogEntries : buildCatalog(availableYears)),
-    [availableYears, catalogEntries]
+    () => (filteredCatalogEntries.length ? filteredCatalogEntries : buildCatalog(filteredAvailableYears.length ? filteredAvailableYears : availableYears)),
+    [availableYears, filteredAvailableYears, filteredCatalogEntries]
   );
   const availableYearOptions = useMemo(
     () => buildAvailableYearOptions(catalog),

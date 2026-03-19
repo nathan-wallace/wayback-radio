@@ -1,167 +1,40 @@
-const DB_NAME = 'wayback-radio-offline';
-const DB_VERSION = 1;
+import {
+  OFFLINE_STORES,
+  __testing as offlineDbTesting,
+  idbClear,
+  idbFindByIndex,
+  idbGet,
+  idbGetAll,
+  idbPut,
+} from './offlineDb';
+import { saveEntityFreshness } from './offlineStateService';
 
-export const OFFLINE_STORES = {
-  catalogEntries: 'catalog_entries',
-  items: 'items',
-  yearItems: 'year_items',
-  favorites: 'favorites',
-  filters: 'filters',
-  syncMeta: 'sync_meta',
-};
-
-const memoryDb = {
-  [OFFLINE_STORES.catalogEntries]: new Map(),
-  [OFFLINE_STORES.items]: new Map(),
-  [OFFLINE_STORES.yearItems]: new Map(),
-  [OFFLINE_STORES.favorites]: new Map(),
-  [OFFLINE_STORES.filters]: new Map(),
-  [OFFLINE_STORES.syncMeta]: new Map(),
-};
-
-let dbPromise = null;
-
-function supportsIndexedDb() {
-  return typeof indexedDB !== 'undefined';
-}
-
-function cloneValue(value) {
-  if (value == null) return value;
-  return JSON.parse(JSON.stringify(value));
-}
-
-function isFresh(updatedAt, ttl) {
+function isFresh(record, ttl) {
+  if (!record) return false;
+  if (record.expiresAt != null) {
+    return Date.now() < record.expiresAt;
+  }
   if (!ttl) return true;
-  if (!updatedAt) return false;
-  return Date.now() - updatedAt < ttl;
+
+  const fetchedAt = record.fetchedAt ?? record.updatedAt;
+  if (!fetchedAt) return false;
+  return Date.now() - fetchedAt < ttl;
 }
 
 function createYearItemKey(year, requestedIdentity = null) {
   return `${year}::${requestedIdentity || ''}`;
 }
 
-function openDatabase() {
-  if (!supportsIndexedDb()) return Promise.resolve(null);
-  if (dbPromise) return dbPromise;
-
-  dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = () => {
-      const db = request.result;
-
-      if (!db.objectStoreNames.contains(OFFLINE_STORES.catalogEntries)) {
-        db.createObjectStore(OFFLINE_STORES.catalogEntries, { keyPath: 'year' });
-      }
-
-      if (!db.objectStoreNames.contains(OFFLINE_STORES.items)) {
-        const itemsStore = db.createObjectStore(OFFLINE_STORES.items, { keyPath: 'id' });
-        itemsStore.createIndex('routeId', 'routeId', { unique: false });
-        itemsStore.createIndex('uid', 'uid', { unique: false });
-      }
-
-      if (!db.objectStoreNames.contains(OFFLINE_STORES.yearItems)) {
-        const yearItemsStore = db.createObjectStore(OFFLINE_STORES.yearItems, { keyPath: 'key' });
-        yearItemsStore.createIndex('year', 'year', { unique: false });
-      }
-
-      if (!db.objectStoreNames.contains(OFFLINE_STORES.favorites)) {
-        db.createObjectStore(OFFLINE_STORES.favorites, { keyPath: 'id' });
-      }
-
-      if (!db.objectStoreNames.contains(OFFLINE_STORES.filters)) {
-        db.createObjectStore(OFFLINE_STORES.filters, { keyPath: 'key' });
-      }
-
-      if (!db.objectStoreNames.contains(OFFLINE_STORES.syncMeta)) {
-        db.createObjectStore(OFFLINE_STORES.syncMeta, { keyPath: 'key' });
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  }).catch((error) => {
-    console.warn('IndexedDB unavailable, falling back to in-memory persistence.', error);
-    return null;
-  });
-
-  return dbPromise;
+function buildFreshness({ fetchedAt, expiresAt, lastPlayedAt }) {
+  return {
+    fetchedAt: fetchedAt ?? null,
+    expiresAt: expiresAt ?? null,
+    lastPlayedAt: lastPlayedAt ?? null,
+  };
 }
 
-async function idbGet(storeName, key) {
-  const db = await openDatabase();
-  if (!db) {
-    return cloneValue(memoryDb[storeName].get(key) ?? null);
-  }
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(storeName, 'readonly');
-    const request = transaction.objectStore(storeName).get(key);
-    request.onsuccess = () => resolve(request.result ?? null);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function idbGetAll(storeName) {
-  const db = await openDatabase();
-  if (!db) {
-    return Array.from(memoryDb[storeName].values()).map((value) => cloneValue(value));
-  }
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(storeName, 'readonly');
-    const request = transaction.objectStore(storeName).getAll();
-    request.onsuccess = () => resolve(request.result ?? []);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function idbPut(storeName, value) {
-  const db = await openDatabase();
-  if (!db) {
-    const key = value?.id ?? value?.key ?? value?.year;
-    memoryDb[storeName].set(key, cloneValue(value));
-    return cloneValue(value);
-  }
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(storeName, 'readwrite');
-    transaction.objectStore(storeName).put(value);
-    transaction.oncomplete = () => resolve(value);
-    transaction.onerror = () => reject(transaction.error);
-  });
-}
-
-async function idbClear(storeName) {
-  const db = await openDatabase();
-  if (!db) {
-    memoryDb[storeName].clear();
-    return;
-  }
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(storeName, 'readwrite');
-    transaction.objectStore(storeName).clear();
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
-  });
-}
-
-async function idbFindByIndex(storeName, indexName, value) {
-  const db = await openDatabase();
-  if (!db) {
-    const records = Array.from(memoryDb[storeName].values());
-    const match = records.find((record) => record?.[indexName] === value);
-    return cloneValue(match ?? null);
-  }
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(storeName, 'readonly');
-    const index = transaction.objectStore(storeName).index(indexName);
-    const request = index.get(value);
-    request.onsuccess = () => resolve(request.result ?? null);
-    request.onerror = () => reject(request.error);
-  });
+async function persistFreshness(entityKey, freshness) {
+  await saveEntityFreshness(entityKey, freshness);
 }
 
 function assembleItemResult(record) {
@@ -171,12 +44,22 @@ function assembleItemResult(record) {
     metadata: record.metadata ?? null,
     error: record.error ?? null,
     itemId: record.routeId || record.id || null,
+    freshness: buildFreshness(record),
+  };
+}
+
+function normalizeFreshness(freshness = {}, ttl = 0) {
+  const fetchedAt = freshness?.fetchedAt ?? freshness?.updatedAt ?? Date.now();
+  return {
+    fetchedAt,
+    expiresAt: freshness?.expiresAt ?? (ttl ? fetchedAt + ttl : null),
+    lastPlayedAt: freshness?.lastPlayedAt ?? null,
   };
 }
 
 export async function getCatalogSnapshot({ ttl } = {}) {
   const meta = await idbGet(OFFLINE_STORES.syncMeta, 'catalog');
-  if (!meta || !isFresh(meta.updatedAt, ttl)) {
+  if (!meta || !isFresh(meta, ttl)) {
     return null;
   }
 
@@ -186,7 +69,7 @@ export async function getCatalogSnapshot({ ttl } = {}) {
     source: meta.source || null,
     generatedAt: meta.generatedAt || null,
     error: meta.error || null,
-    updatedAt: meta.updatedAt || null,
+    freshness: buildFreshness(meta),
   };
 }
 
@@ -202,53 +85,79 @@ export async function getStaleCatalogSnapshot() {
     source: meta.source || null,
     generatedAt: meta.generatedAt || null,
     error: meta.error || null,
-    updatedAt: meta.updatedAt || null,
+    freshness: buildFreshness(meta),
   };
 }
 
-export async function saveCatalogSnapshot({ entries = [], source = null, generatedAt = null, error = null }) {
-  const updatedAt = Date.now();
+export async function saveCatalogSnapshot({ entries = [], source = null, generatedAt = null, error = null, freshness } = {}) {
+  const normalizedFreshness = normalizeFreshness(freshness);
   await idbClear(OFFLINE_STORES.catalogEntries);
   await Promise.all(entries.map((entry) => idbPut(OFFLINE_STORES.catalogEntries, {
     ...entry,
-    updatedAt,
+    fetchedAt: normalizedFreshness.fetchedAt,
+    expiresAt: normalizedFreshness.expiresAt,
   })));
   await idbPut(OFFLINE_STORES.syncMeta, {
     key: 'catalog',
     source,
     generatedAt,
     error,
-    updatedAt,
+    ...normalizedFreshness,
   });
+  await persistFreshness('catalog', normalizedFreshness);
+}
+
+async function lookupItemRecord(lookupValue) {
+  const directRecord = await idbGet(OFFLINE_STORES.items, lookupValue);
+  const routeRecord = directRecord || await idbFindByIndex(OFFLINE_STORES.items, 'routeId', lookupValue);
+  const uidRecord = routeRecord || await idbFindByIndex(OFFLINE_STORES.items, 'uid', lookupValue);
+  return uidRecord;
 }
 
 export async function getItemByLookup(lookupValue, { ttl } = {}) {
   if (!lookupValue) return null;
 
-  const directRecord = await idbGet(OFFLINE_STORES.items, lookupValue);
-  const routeRecord = directRecord || await idbFindByIndex(OFFLINE_STORES.items, 'routeId', lookupValue);
-  const uidRecord = routeRecord || await idbFindByIndex(OFFLINE_STORES.items, 'uid', lookupValue);
-  const record = uidRecord;
-
-  if (!record || !isFresh(record.updatedAt, ttl)) {
+  const record = await lookupItemRecord(lookupValue);
+  if (!record || !isFresh(record, ttl)) {
     return null;
   }
 
   return assembleItemResult(record);
 }
 
-export async function saveItemRecord(record) {
-  if (!record?.id) return;
+export async function getStaleItemByLookup(lookupValue) {
+  if (!lookupValue) return null;
 
-  await idbPut(OFFLINE_STORES.items, {
-    ...record,
-    updatedAt: record.updatedAt || Date.now(),
-  });
+  const record = await lookupItemRecord(lookupValue);
+  return assembleItemResult(record);
 }
 
-export async function getYearSelection(year, requestedIdentity = null, { ttl } = {}) {
-  const record = await idbGet(OFFLINE_STORES.yearItems, createYearItemKey(year, requestedIdentity));
-  if (!record || !isFresh(record.updatedAt, ttl)) {
+export async function saveItemRecord(record, { ttl, freshness } = {}) {
+  if (!record?.id) return null;
+
+  const normalizedFreshness = normalizeFreshness(freshness || record, ttl);
+  const nextRecord = {
+    ...record,
+    ...normalizedFreshness,
+  };
+
+  await idbPut(OFFLINE_STORES.items, nextRecord);
+  await persistFreshness(`item:${record.id}`, normalizedFreshness);
+  if (record.routeId && record.routeId !== record.id) {
+    await persistFreshness(`route:${record.routeId}`, normalizedFreshness);
+  }
+  if (record.uid) {
+    await persistFreshness(`uid:${record.uid}`, normalizedFreshness);
+  }
+  return nextRecord;
+}
+
+async function getYearSelectionRecord(year, requestedIdentity = null) {
+  return idbGet(OFFLINE_STORES.yearItems, createYearItemKey(year, requestedIdentity));
+}
+
+async function assembleYearSelection(record, { ttl } = {}) {
+  if (!record || (!isFresh(record, ttl) && ttl !== undefined)) {
     return null;
   }
 
@@ -259,10 +168,13 @@ export async function getYearSelection(year, requestedIdentity = null, { ttl } =
       error: record.error || null,
       itemUids: record.itemUids || [],
       itemId: null,
+      freshness: buildFreshness(record),
     };
   }
 
-  const itemResult = await getItemByLookup(record.itemId, { ttl });
+  const itemResult = ttl === undefined
+    ? await getStaleItemByLookup(record.itemId)
+    : await getItemByLookup(record.itemId, { ttl });
   if (!itemResult) {
     return null;
   }
@@ -270,33 +182,62 @@ export async function getYearSelection(year, requestedIdentity = null, { ttl } =
   return {
     ...itemResult,
     itemUids: record.itemUids || [],
+    freshness: buildFreshness(record),
   };
 }
 
-export async function saveYearSelection(year, requestedIdentity = null, result, itemRecord = null) {
-  const updatedAt = Date.now();
+export async function getYearSelection(year, requestedIdentity = null, { ttl } = {}) {
+  const record = await getYearSelectionRecord(year, requestedIdentity);
+  return assembleYearSelection(record, { ttl });
+}
+
+export async function getStaleYearSelection(year, requestedIdentity = null) {
+  const record = await getYearSelectionRecord(year, requestedIdentity);
+  return assembleYearSelection(record);
+}
+
+export async function saveYearSelection(year, requestedIdentity = null, result, itemRecord = null, { ttl, freshness } = {}) {
+  const normalizedFreshness = normalizeFreshness(freshness || result, ttl);
 
   if (itemRecord?.id) {
     await saveItemRecord({
       ...itemRecord,
-      updatedAt,
-    });
+      lastPlayedAt: itemRecord.lastPlayedAt ?? normalizedFreshness.lastPlayedAt,
+    }, { ttl, freshness: normalizedFreshness });
   }
 
-  await idbPut(OFFLINE_STORES.yearItems, {
+  const yearSelectionRecord = {
     key: createYearItemKey(year, requestedIdentity),
     year,
     requestedIdentity: requestedIdentity || null,
     itemId: itemRecord?.id || null,
     itemUids: result?.itemUids || [],
     error: result?.error || null,
-    updatedAt,
-  });
+    ...normalizedFreshness,
+  };
+
+  await idbPut(OFFLINE_STORES.yearItems, yearSelectionRecord);
+  await persistFreshness(`year:${year}:${requestedIdentity || ''}`, normalizedFreshness);
+  return yearSelectionRecord;
+}
+
+export async function getCachedLibrarySnapshot() {
+  const [catalogEntries, items, yearSelections] = await Promise.all([
+    idbGetAll(OFFLINE_STORES.catalogEntries),
+    idbGetAll(OFFLINE_STORES.items),
+    idbGetAll(OFFLINE_STORES.yearItems),
+  ]);
+
+  return {
+    catalogEntries: catalogEntries.sort((a, b) => a.year - b.year),
+    items,
+    yearSelections,
+  };
 }
 
 export const __testing = {
   async resetOfflineStore() {
-    await Promise.all(Object.values(OFFLINE_STORES).map((storeName) => idbClear(storeName)));
+    await offlineDbTesting.resetOfflineDb();
   },
   createYearItemKey,
 };

@@ -5,6 +5,21 @@ import {
   fetchAudioById,
   mergeCatalogYearEntry
 } from '../services/AudioService';
+import {
+  addFavorite,
+  DEFAULT_FILTERS,
+  DEFAULT_SYNC_STATE,
+  deriveFilteredCatalogEntries,
+  deriveFilteredItemUids,
+  getOfflineStateSnapshot,
+  recordSuccessfulSync,
+  removeFavorite,
+  saveActiveFilters,
+  setOnlineStatus,
+  setPendingRefresh,
+  touchLastPlayed,
+} from '../services/offlineStateService';
+import { getCachedLibrarySnapshot } from '../services/offlineStore';
 import { parseRadioUrlState, serializeRadioUrlState } from '../utils/radioUrlState';
 
 const initialState = {
@@ -22,6 +37,21 @@ const initialState = {
   currentItemId: null,
   sessionStatus: 'booting',
   error: null,
+};
+
+const initialOfflineState = {
+  favorites: [],
+  favoriteIds: [],
+  favoritesById: {},
+  filters: DEFAULT_FILTERS,
+  sync: DEFAULT_SYNC_STATE,
+  freshnessByEntity: {},
+};
+
+const initialOfflineLibrary = {
+  catalogEntries: [],
+  items: [],
+  yearSelections: [],
 };
 
 function radioReducer(state, action) {
@@ -94,11 +124,41 @@ function buildEmptyMessage(error) {
   return error || 'No Library of Congress recordings are currently available.';
 }
 
+function getStableItemId(itemId, metadata) {
+  return metadata?.uid || itemId || null;
+}
+
+function getFavoriteRecord(itemId, metadata, fallbackYear) {
+  const stableId = getStableItemId(itemId, metadata);
+  if (!stableId) return null;
+
+  const parsedYear = Number.parseInt(metadata?.date || fallbackYear, 10);
+  return {
+    id: stableId,
+    uid: metadata?.uid || stableId,
+    routeId: itemId || null,
+    title: metadata?.title || null,
+    year: Number.isNaN(parsedYear) ? null : parsedYear,
+  };
+}
+
+function buildItemRecordIndex(items = []) {
+  return items.reduce((acc, itemRecord) => {
+    const candidates = [itemRecord?.id, itemRecord?.uid, itemRecord?.routeId].filter(Boolean);
+    candidates.forEach((candidate) => {
+      acc[candidate] = itemRecord;
+    });
+    return acc;
+  }, {});
+}
+
 export function useRadioController() {
   const [state, dispatch] = useReducer(radioReducer, initialState);
   const [initialParams] = useState(parseInitialParams);
   const [overrideAudio, setOverrideAudio] = useState(false);
   const [initComplete, setInitComplete] = useState(false);
+  const [offlineState, setOfflineState] = useState(initialOfflineState);
+  const [offlineLibrary, setOfflineLibrary] = useState(initialOfflineLibrary);
   const screenRef = useRef(null);
   const selectionRequestRef = useRef(0);
   const yearsRequestRef = useRef(0);
@@ -122,6 +182,18 @@ export function useRadioController() {
     error
   } = state;
 
+  const refreshOfflineState = useCallback(async () => {
+    const snapshot = await getOfflineStateSnapshot();
+    setOfflineState(snapshot);
+    return snapshot;
+  }, []);
+
+  const refreshOfflineLibrary = useCallback(async () => {
+    const snapshot = await getCachedLibrarySnapshot();
+    setOfflineLibrary(snapshot);
+    return snapshot;
+  }, []);
+
   const setYearValue = useCallback(
     (nextYear) => {
       setOverrideAudio(false);
@@ -140,7 +212,16 @@ export function useRadioController() {
   const setSessionStatus = useCallback((nextStatus) => dispatch({ type: 'SET_SESSION_STATUS', payload: nextStatus }), []);
   const setError = useCallback((nextError) => dispatch({ type: 'SET_ERROR', payload: nextError }), []);
 
-  const applyAudioResult = useCallback((result, updates = {}) => {
+  const syncStateForResult = useCallback(async (result) => {
+    if (result?.stale || result?.error) {
+      await setPendingRefresh(true);
+    } else {
+      await recordSuccessfulSync();
+    }
+    await refreshOfflineState();
+  }, [refreshOfflineState]);
+
+  const applyAudioResult = useCallback(async (result, updates = {}) => {
     dispatch({
       type: 'APPLY_AUDIO_RESULT',
       payload: {
@@ -153,7 +234,14 @@ export function useRadioController() {
         sessionStatus: result.error ? 'error' : 'ready'
       }
     });
-  }, []);
+
+    const stableItemId = getStableItemId(updates.itemId ?? result.itemId ?? null, result.metadata);
+    if (stableItemId) {
+      await touchLastPlayed(`uid:${stableItemId}`);
+      await refreshOfflineState();
+    }
+    await refreshOfflineLibrary();
+  }, [refreshOfflineLibrary, refreshOfflineState]);
 
   const withLatestSelection = useCallback(async (status, fetcher, onSuccess) => {
     const requestId = ++selectionRequestRef.current;
@@ -165,9 +253,10 @@ export function useRadioController() {
       return null;
     }
 
-    onSuccess(result);
+    await onSuccess(result);
+    await syncStateForResult(result);
     return result;
-  }, [setError, setSessionStatus]);
+  }, [setError, setSessionStatus, syncStateForResult]);
 
   const prefetchAdjacentYears = useCallback((targetYear, years) => {
     const currentIndex = years.indexOf(targetYear);
@@ -183,11 +272,11 @@ export function useRadioController() {
   }, []);
 
   const loadYearAudio = useCallback(async (targetYear, itemId = null) => (
-    withLatestSelection('loadingYear', () => fetchAudioByYear(targetYear, itemId), (result) => {
+    withLatestSelection('loadingYear', () => fetchAudioByYear(targetYear, itemId), async (result) => {
       const selectedItemId = result.itemId || itemId || result.metadata?.uid || null;
       const itemUidIndex = selectedItemId ? result.itemUids?.indexOf(selectedItemId) : -1;
 
-      applyAudioResult(result, {
+      await applyAudioResult(result, {
         itemUids: result.itemUids || [],
         itemIndex: itemUidIndex >= 0 ? itemUidIndex : 0,
         itemId: selectedItemId
@@ -197,8 +286,8 @@ export function useRadioController() {
   ), [applyAudioResult, availableYears, prefetchAdjacentYears, withLatestSelection]);
 
   const loadAudioById = useCallback(async (audioId, targetYear) => (
-    withLatestSelection('loadingItem', () => fetchAudioById(audioId), (result) => {
-      applyAudioResult(result, {
+    withLatestSelection('loadingItem', () => fetchAudioById(audioId), async (result) => {
+      await applyAudioResult(result, {
         itemUids: [audioId],
         itemIndex: 0,
         itemId: result.itemId || audioId
@@ -215,8 +304,8 @@ export function useRadioController() {
     }
 
     const targetItemId = itemUids[idx];
-    await withLatestSelection('loadingItem', () => fetchAudioById(targetItemId), (result) => {
-      applyAudioResult(result, {
+    await withLatestSelection('loadingItem', () => fetchAudioById(targetItemId), async (result) => {
+      await applyAudioResult(result, {
         itemUids: [...itemUids],
         itemIndex: idx,
         itemId: result.itemId || targetItemId
@@ -237,12 +326,88 @@ export function useRadioController() {
     }
   }, [itemIndex, playItemByIndex]);
 
+  const updateFilters = useCallback(async (nextFilters) => {
+    const merged = {
+      ...offlineState.filters,
+      ...nextFilters,
+      yearRange: {
+        ...offlineState.filters.yearRange,
+        ...nextFilters?.yearRange,
+      },
+    };
+    const savedFilters = await saveActiveFilters(merged);
+    setOfflineState((prev) => ({
+      ...prev,
+      filters: savedFilters,
+    }));
+    return savedFilters;
+  }, [offlineState.filters]);
+
+  const resetFilters = useCallback(async () => {
+    const savedFilters = await saveActiveFilters(DEFAULT_FILTERS);
+    setOfflineState((prev) => ({
+      ...prev,
+      filters: savedFilters,
+    }));
+    return savedFilters;
+  }, []);
+
+  const toggleFavorite = useCallback(async (favoriteRecord = null) => {
+    const nextRecord = favoriteRecord || getFavoriteRecord(currentItemId, metadata, year);
+    if (!nextRecord?.id) {
+      return false;
+    }
+
+    const isCurrentlyFavorite = Boolean(offlineState.favoritesById[nextRecord.id]);
+    if (isCurrentlyFavorite) {
+      await removeFavorite(nextRecord.id);
+    } else {
+      await addFavorite(nextRecord);
+    }
+
+    await refreshOfflineState();
+    return !isCurrentlyFavorite;
+  }, [currentItemId, metadata, offlineState.favoritesById, refreshOfflineState, year]);
+
+  useEffect(() => {
+    refreshOfflineState();
+    refreshOfflineLibrary();
+  }, [refreshOfflineLibrary, refreshOfflineState]);
+
   useEffect(() => {
     const savedVolume = localStorage.getItem('clientVolume');
     if (savedVolume) {
       setVolume(Number.parseFloat(savedVolume));
     }
   }, [setVolume]);
+
+  useEffect(() => {
+    async function syncNavigatorStatus() {
+      await setOnlineStatus(typeof navigator === 'undefined' ? true : navigator.onLine !== false);
+      await refreshOfflineState();
+    }
+
+    syncNavigatorStatus();
+
+    const handleOnline = async () => {
+      await setOnlineStatus(true);
+      await refreshOfflineState();
+    };
+
+    const handleOffline = async () => {
+      await setOnlineStatus(false);
+      await setPendingRefresh(true);
+      await refreshOfflineState();
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [refreshOfflineState]);
 
   useEffect(() => {
     const requestId = ++yearsRequestRef.current;
@@ -260,9 +425,15 @@ export function useRadioController() {
       }
 
       setCatalog({ entries, source, generatedAt });
+      await refreshOfflineLibrary();
 
       if (yearsError) {
         setError(yearsError);
+        await setPendingRefresh(true);
+        await refreshOfflineState();
+      } else {
+        await recordSuccessfulSync();
+        await refreshOfflineState();
       }
 
       if (years?.length) {
@@ -279,7 +450,7 @@ export function useRadioController() {
     }
 
     loadYears();
-  }, [setAvailableYears, setCatalog, setError, setSessionStatus]);
+  }, [refreshOfflineLibrary, refreshOfflineState, setAvailableYears, setCatalog, setError, setSessionStatus]);
 
   useEffect(() => {
     if (availableYears.length === 0 || initHandledRef.current) {
@@ -380,6 +551,47 @@ export function useRadioController() {
     window.history.replaceState({}, '', nextUrl);
   }, [currentItemId, initComplete, isOn, year]);
 
+  const currentStableItemId = useMemo(
+    () => getStableItemId(currentItemId, metadata),
+    [currentItemId, metadata]
+  );
+
+  const isCurrentFavorite = useMemo(
+    () => Boolean(currentStableItemId && offlineState.favoritesById[currentStableItemId]),
+    [currentStableItemId, offlineState.favoritesById]
+  );
+
+  const itemRecordsById = useMemo(
+    () => buildItemRecordIndex(offlineLibrary.items),
+    [offlineLibrary.items]
+  );
+
+  const filteredCatalogEntries = useMemo(
+    () => deriveFilteredCatalogEntries(catalogEntries, {
+      filters: offlineState.filters,
+      favoritesById: offlineState.favoritesById,
+      itemRecords: offlineLibrary.items,
+      yearSelections: offlineLibrary.yearSelections,
+    }),
+    [catalogEntries, offlineLibrary.items, offlineLibrary.yearSelections, offlineState.favoritesById, offlineState.filters]
+  );
+
+  const filteredAvailableYears = useMemo(
+    () => filteredCatalogEntries
+      .filter((entry) => entry.itemCount !== 0)
+      .map((entry) => entry.year),
+    [filteredCatalogEntries]
+  );
+
+  const filteredItemUids = useMemo(
+    () => deriveFilteredItemUids(itemUids, {
+      filters: offlineState.filters,
+      favoritesById: offlineState.favoritesById,
+      itemRecordsById,
+    }),
+    [itemRecordsById, itemUids, offlineState.favoritesById, offlineState.filters]
+  );
+
   const controller = useMemo(() => ({
     year,
     setYear: setYearValue,
@@ -392,15 +604,19 @@ export function useRadioController() {
     metadata,
     setMetadata,
     availableYears,
+    filteredAvailableYears,
     setAvailableYears,
     catalogEntries,
+    filteredCatalogEntries,
     catalogSource,
     catalogGeneratedAt,
     itemUids,
+    filteredItemUids,
     setItemUids,
     itemIndex,
     setItemIndex,
     currentItemId,
+    currentStableItemId,
     nextItem,
     prevItem,
     playItemByIndex,
@@ -412,6 +628,19 @@ export function useRadioController() {
     initComplete,
     overrideAudio,
     screenRef,
+    offlineState,
+    offlineLibrary,
+    favorites: offlineState.favorites,
+    favoriteIds: offlineState.favoriteIds,
+    favoritesById: offlineState.favoritesById,
+    filters: offlineState.filters,
+    syncState: offlineState.sync,
+    freshnessByEntity: offlineState.freshnessByEntity,
+    isCurrentFavorite,
+    toggleFavorite,
+    setFilters: updateFilters,
+    resetFilters,
+    refreshOfflineState,
   }), [
     audioUrl,
     availableYears,
@@ -419,16 +648,25 @@ export function useRadioController() {
     catalogGeneratedAt,
     catalogSource,
     currentItemId,
+    currentStableItemId,
     error,
+    filteredAvailableYears,
+    filteredCatalogEntries,
+    filteredItemUids,
     initComplete,
+    isCurrentFavorite,
     isOn,
     itemIndex,
     itemUids,
     metadata,
     nextItem,
+    offlineLibrary,
+    offlineState,
     overrideAudio,
     playItemByIndex,
     prevItem,
+    refreshOfflineState,
+    resetFilters,
     screenRef,
     sessionStatus,
     setAudioUrl,
@@ -441,6 +679,8 @@ export function useRadioController() {
     setSessionStatus,
     setVolume,
     setYearValue,
+    toggleFavorite,
+    updateFilters,
     volume,
     year,
   ]);
