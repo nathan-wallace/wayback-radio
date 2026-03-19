@@ -7,6 +7,8 @@
     "preview": "vite preview",
     "test": "jest",
     "generate:archive-cache": "node scripts/generate-archive-cache.mjs",
+    "generate:static-dataset": "npm run generate:archive-cache",
+    "materialize:static-dataset": "node scripts/materialize-static-dataset.mjs",
     "test:functional": "playwright test",
     "test:functional:ui": "playwright test --ui",
     "test:functional:install": "playwright install --with-deps chromium"
