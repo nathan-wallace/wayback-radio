@@ -1,8 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { buildDatasetUrl } from './src/utils/datasetUrl';
 
 const APP_BASE_PATH = '/wayback-radio/';
+const DATASET_REQUEST_PATTERN = new RegExp(
+  `${buildDatasetUrl('', APP_BASE_PATH).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*\\.json$`
+);
 const isLocJsonRequest = ({ url, request }) => (
   request.method === 'GET'
   && url.origin === 'https://www.loc.gov'
@@ -82,6 +86,20 @@ export default defineConfig({
         runtimeCaching: [
           {
             urlPattern: isAppShellAssetRequest,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'wayback-radio-app-shell-v1',
+              cacheableResponse: {
+                statuses: [0, 200]
+              },
+              expiration: {
+                maxEntries: 64,
+                maxAgeSeconds: 7 * 24 * 60 * 60
+              }
+            }
+          },
+          {
+            urlPattern: DATASET_REQUEST_PATTERN,
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'wayback-radio-app-shell-v1',
