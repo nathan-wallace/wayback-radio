@@ -1,4 +1,4 @@
-import { __testing as audioServiceTesting, fetchAudioByYear, fetchAudioById, fetchAvailableYears } from '../AudioService';
+import { __testing as audioServiceTesting, CURRENT_DATASET_VERSION, fetchAudioByYear, fetchAudioById, fetchAvailableYears } from '../AudioService';
 import { __testing as offlineStoreTesting, saveYearSelection } from '../offlineStore';
 
 function createSearchItem({ id, year, title, audio = true }) {
@@ -153,9 +153,10 @@ describe('fetchAudioByYear', () => {
       {
         ttl: 7 * 24 * 60 * 60 * 1000,
         freshness: {
-          fetchedAt: Date.parse('2026-02-01T00:00:00.000Z'),
-          expiresAt: Date.parse('2026-02-02T00:00:00.000Z'),
-        }
+          fetchedAt: Date.now() - (8 * 24 * 60 * 60 * 1000),
+          expiresAt: Date.now() - (24 * 60 * 60 * 1000),
+        },
+        datasetVersion: CURRENT_DATASET_VERSION,
       }
     );
 

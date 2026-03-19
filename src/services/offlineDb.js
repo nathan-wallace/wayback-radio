@@ -1,5 +1,5 @@
 const DB_NAME = 'wayback-radio-offline';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export const OFFLINE_STORES = {
   catalogEntries: 'catalog_entries',
