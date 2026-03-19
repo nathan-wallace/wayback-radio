@@ -6,14 +6,18 @@ import { addFavorite, saveActiveFilters, saveSyncState } from '../../services/of
 jest.mock('../../services/AudioService', () => ({
   fetchAvailableYears: jest.fn(),
   fetchAudioByYear: jest.fn(),
-  fetchAudioById: jest.fn(),
+  fetchRecordingById: jest.fn(),
+  isDirectAudioUrl: jest.fn(),
+  resolvePlaybackForDirectUrl: jest.fn(),
   mergeCatalogYearEntry: jest.fn((entries = [], year, patch = {}) => [...entries, { year, ...patch }])
 }));
 
 const {
   fetchAvailableYears,
   fetchAudioByYear,
-  fetchAudioById
+  fetchRecordingById,
+  isDirectAudioUrl,
+  resolvePlaybackForDirectUrl
 } = jest.requireMock('../../services/AudioService');
 
 function createPlayback(url, mimeType = 'audio/mpeg') {
@@ -36,6 +40,7 @@ function setNavigatorOnline(value) {
 describe('useRadioController', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
+    isDirectAudioUrl.mockImplementation((value) => /^https?:.*\.(mp3|wav)$/i.test(String(value || '')));
     localStorage.clear();
     window.history.replaceState({}, '', '/');
     jest.spyOn(window.history, 'replaceState');
@@ -86,7 +91,7 @@ describe('useRadioController', () => {
       itemRouteIds: ['loc-1940-first', 'loc-1940-second'],
       itemId: 'loc-1940-first'
     });
-    fetchAudioById.mockResolvedValue({
+    fetchRecordingById.mockResolvedValue({
       playback: createPlayback('https://cdn.example/two.mp3'),
       metadata: { title: 'Second Item', date: '1940', uid: '222' },
       error: null,
@@ -135,7 +140,7 @@ describe('useRadioController', () => {
       itemRouteIds: ['loc-1940-first'],
       itemId: 'loc-1940-first'
     });
-    fetchAudioById.mockResolvedValue({
+    fetchRecordingById.mockResolvedValue({
       playback: createPlayback('https://cdn.example/one.mp3'),
       metadata: { title: 'Deferred Item', date: '1940', uid: '111' },
       error: null,
@@ -151,18 +156,58 @@ describe('useRadioController', () => {
       streams: [],
     });
 
-    expect(fetchAudioById).not.toHaveBeenCalled();
+    expect(fetchRecordingById).not.toHaveBeenCalled();
 
     await act(async () => {
       result.current.setIsOn(true);
     });
 
     await waitFor(() => {
-      expect(fetchAudioById).toHaveBeenCalledWith('loc-1940-first');
+      expect(fetchRecordingById).toHaveBeenCalledWith('loc-1940-first');
     });
     expect(result.current.playback).toMatchObject({
       primaryUrl: 'https://cdn.example/one.mp3',
       mimeType: 'audio/mpeg',
+    });
+  });
+
+
+  it('uses the direct-playback path for explicit imported audio URLs', async () => {
+    fetchAvailableYears.mockResolvedValue({
+      years: [1940],
+      entries: [{ year: 1940, itemCount: 1, sampleItemIds: ['111'], status: 'ready' }],
+      source: 'catalog-test',
+      generatedAt: '2026-03-18T00:00:00.000Z',
+      error: null
+    });
+    fetchAudioByYear.mockResolvedValue({
+      playback: createPlayback('https://cdn.example/one.mp3'),
+      metadata: { title: 'Imported Item', date: '1940', uid: '111' },
+      error: null,
+      itemUids: ['111'],
+      itemRouteIds: ['https://media.example/imported.wav'],
+      itemId: 'https://media.example/imported.wav'
+    });
+    resolvePlaybackForDirectUrl.mockResolvedValue({
+      playback: createPlayback('https://media.example/imported.wav', 'audio/wav'),
+      metadata: { title: 'Imported Item', date: '1940', mimeType: 'audio/wav' },
+      error: null,
+      itemId: 'https://media.example/imported.wav'
+    });
+
+    window.history.replaceState({}, '', '/?year=1940&itemId=https%3A%2F%2Fmedia.example%2Fimported.wav&autoplay=true');
+
+    const { result } = renderHook(() => useRadioController());
+
+    await waitFor(() => expect(result.current.initComplete).toBe(true));
+
+    await waitFor(() => {
+      expect(resolvePlaybackForDirectUrl).toHaveBeenCalledWith('https://media.example/imported.wav');
+    });
+    expect(fetchRecordingById).not.toHaveBeenCalled();
+    expect(result.current.playback).toMatchObject({
+      primaryUrl: 'https://media.example/imported.wav',
+      mimeType: 'audio/wav',
     });
   });
 
