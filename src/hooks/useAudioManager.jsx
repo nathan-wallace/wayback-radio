@@ -6,7 +6,56 @@ const FADE_DURATION_MS = 500;
 
 Howler.html5PoolSize = Math.max(Howler.html5PoolSize || 10, 20);
 
-export const useAudioManager = (audioUrl, isOn, volume) => {
+function inferFormatFromMimeType(mimeType = '') {
+  const normalized = String(mimeType).toLowerCase();
+  if (normalized.includes('mpeg')) return 'mp3';
+  if (normalized.includes('mp4')) return 'mp4';
+  if (normalized.includes('aac')) return 'aac';
+  if (normalized.includes('ogg')) return 'ogg';
+  if (normalized.includes('wav')) return 'wav';
+  if (normalized.includes('flac')) return 'flac';
+  return null;
+}
+
+function inferFormatFromUrl(url = '') {
+  const normalized = String(url).toLowerCase();
+  if (normalized.match(/\.mp3($|[?#])/)) return 'mp3';
+  if (normalized.match(/\.m4a($|[?#])/)) return 'mp4';
+  if (normalized.match(/\.mp4($|[?#])/)) return 'mp4';
+  if (normalized.match(/\.aac($|[?#])/)) return 'aac';
+  if (normalized.match(/\.ogg($|[?#])/)) return 'ogg';
+  if (normalized.match(/\.wav($|[?#])/)) return 'wav';
+  if (normalized.match(/\.flac($|[?#])/)) return 'flac';
+  return null;
+}
+
+function choosePlayablePlayback(playback) {
+  if (!playback) return null;
+
+  const candidateStreams = [
+    playback.primaryUrl ? { url: playback.primaryUrl, mimeType: playback.mimeType || null } : null,
+    ...(Array.isArray(playback.streams) ? playback.streams : [])
+  ].filter((stream) => stream?.url);
+
+  const dedupedStreams = [...new Map(
+    candidateStreams.map((stream) => [stream.url, stream])
+  ).values()];
+
+  if (!dedupedStreams.length) {
+    return null;
+  }
+
+  const formats = [...new Set(dedupedStreams.map((stream) => (
+    inferFormatFromMimeType(stream.mimeType) || inferFormatFromUrl(stream.url)
+  )).filter(Boolean))];
+
+  return {
+    src: dedupedStreams.map((stream) => stream.url),
+    format: formats.length ? formats : undefined,
+  };
+}
+
+export const useAudioManager = (playback, isOn, volume) => {
   const [sound, setSound] = useState(null);
   const [transportState, setTransportState] = useState('paused');
   const pauseTimerRef = useRef(null);
@@ -36,7 +85,9 @@ export const useAudioManager = (audioUrl, isOn, volume) => {
   }, [volume]);
 
   useEffect(() => {
-    if (!audioUrl) {
+    const playablePlayback = choosePlayablePlayback(playback);
+
+    if (!playablePlayback?.src?.length) {
       activeSoundRef.current = null;
       setSound(null);
       setTransportState('paused');
@@ -48,11 +99,11 @@ export const useAudioManager = (audioUrl, isOn, volume) => {
     setTransportState('paused');
 
     const newSound = new Howl({
-      src: [audioUrl],
+      src: playablePlayback.src,
       autoplay: false,
       html5: true,
       volume: 0,
-      format: ['mp3'],
+      format: playablePlayback.format,
       onplay: () => {
         if (activeSoundRef.current !== newSound) {
           return;
@@ -118,7 +169,7 @@ export const useAudioManager = (audioUrl, isOn, volume) => {
       newSound.unload();
       setTransportState('paused');
     };
-  }, [audioUrl, clearPendingTimers]);
+  }, [clearPendingTimers, playback]);
 
   useEffect(() => {
     if (!sound) {

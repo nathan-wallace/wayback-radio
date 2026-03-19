@@ -16,6 +16,14 @@ const {
   fetchAudioById
 } = jest.requireMock('../../services/AudioService');
 
+function createPlayback(url, mimeType = 'audio/mpeg') {
+  return {
+    primaryUrl: url,
+    mimeType,
+    streams: [{ url, mimeType }],
+  };
+}
+
 const originalNavigatorOnLine = Object.getOwnPropertyDescriptor(window.navigator, 'onLine');
 
 function setNavigatorOnline(value) {
@@ -71,7 +79,7 @@ describe('useRadioController', () => {
       error: null
     });
     fetchAudioByYear.mockResolvedValue({
-      audioUrl: 'https://cdn.example/one.mp3',
+      playback: createPlayback('https://cdn.example/one.mp3'),
       metadata: { title: 'First Item', date: '1940', uid: '111' },
       error: null,
       itemUids: ['111', '222'],
@@ -79,7 +87,7 @@ describe('useRadioController', () => {
       itemId: 'loc-1940-first'
     });
     fetchAudioById.mockResolvedValue({
-      audioUrl: 'https://cdn.example/two.mp3',
+      playback: createPlayback('https://cdn.example/two.mp3'),
       metadata: { title: 'Second Item', date: '1940', uid: '222' },
       error: null,
       itemId: 'loc-1940-second'
@@ -88,6 +96,10 @@ describe('useRadioController', () => {
     const { result } = renderHook(() => useRadioController());
 
     await waitFor(() => expect(result.current.initComplete).toBe(true));
+    expect(result.current.playback).toMatchObject({
+      primaryUrl: 'https://cdn.example/one.mp3',
+      mimeType: 'audio/mpeg',
+    });
     expect(window.history.replaceState).toHaveBeenLastCalledWith({}, '', '/?year=1940&itemId=loc-1940-first');
 
     await act(async () => {
@@ -116,7 +128,7 @@ describe('useRadioController', () => {
       error: null
     });
     fetchAudioByYear.mockResolvedValue({
-      audioUrl: null,
+      playback: { primaryUrl: null, mimeType: null, streams: [] },
       metadata: { title: 'Deferred Item', date: '1940', uid: '111' },
       error: null,
       itemUids: ['111'],
@@ -124,7 +136,7 @@ describe('useRadioController', () => {
       itemId: 'loc-1940-first'
     });
     fetchAudioById.mockResolvedValue({
-      audioUrl: 'https://cdn.example/one.mp3',
+      playback: createPlayback('https://cdn.example/one.mp3'),
       metadata: { title: 'Deferred Item', date: '1940', uid: '111' },
       error: null,
       itemId: 'loc-1940-first'
@@ -133,6 +145,11 @@ describe('useRadioController', () => {
     const { result } = renderHook(() => useRadioController());
 
     await waitFor(() => expect(result.current.initComplete).toBe(true));
+    expect(result.current.playback).toEqual({
+      primaryUrl: null,
+      mimeType: null,
+      streams: [],
+    });
 
     expect(fetchAudioById).not.toHaveBeenCalled();
 
@@ -142,6 +159,10 @@ describe('useRadioController', () => {
 
     await waitFor(() => {
       expect(fetchAudioById).toHaveBeenCalledWith('loc-1940-first');
+    });
+    expect(result.current.playback).toMatchObject({
+      primaryUrl: 'https://cdn.example/one.mp3',
+      mimeType: 'audio/mpeg',
     });
   });
 
@@ -154,7 +175,7 @@ describe('useRadioController', () => {
       error: null
     });
     fetchAudioByYear.mockResolvedValue({
-      audioUrl: 'https://cdn.example/one.mp3',
+      playback: createPlayback('https://cdn.example/one.mp3'),
       metadata: { title: 'Favorite Item', date: '1940', uid: '111' },
       error: null,
       itemUids: ['111'],
@@ -192,7 +213,7 @@ describe('useRadioController', () => {
       1940,
       null,
       {
-        audioUrl: 'https://cdn.example/one.mp3',
+        playback: createPlayback('https://cdn.example/one.mp3'),
         metadata: { title: 'Offline First', date: '1940', uid: '111' },
         error: null,
         itemUids: ['111']
@@ -201,7 +222,7 @@ describe('useRadioController', () => {
         id: '111',
         routeId: 'loc-1940-first',
         uid: '111',
-        audioUrl: 'https://cdn.example/one.mp3',
+        playback: createPlayback('https://cdn.example/one.mp3'),
         metadata: { title: 'Offline First', date: '1940', uid: '111' },
       },
       {
@@ -229,7 +250,7 @@ describe('useRadioController', () => {
       error: null
     });
     fetchAudioByYear.mockResolvedValue({
-      audioUrl: 'https://cdn.example/one.mp3',
+      playback: createPlayback('https://cdn.example/one.mp3'),
       metadata: { title: 'Offline First', date: '1940', uid: '111' },
       error: null,
       itemUids: ['111'],

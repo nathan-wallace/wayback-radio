@@ -1,7 +1,7 @@
 import {
   buildMetadata,
   buildSelectionKeys,
-  getAudioUrlFromResources,
+  extractPlaybackFromResources,
   isPlayableSearchItem,
   normalizeMetadata,
 } from '../../../shared/locNormalization.mjs';
@@ -60,7 +60,7 @@ describe('locNormalization helpers', () => {
     ]);
   });
 
-  it('detects playable resources and extracts audio URLs from object-shaped LOC resources', () => {
+  it('detects playable resources and extracts playback details from object-shaped LOC resources', () => {
     const payload = {
       resources: {
         0: {
@@ -75,6 +75,16 @@ describe('locNormalization helpers', () => {
     };
 
     expect(isPlayableSearchItem(payload)).toBe(true);
-    expect(getAudioUrlFromResources(payload)).toBe('https://cdn.example/object-shaped.mp3');
+    expect(extractPlaybackFromResources(payload)).toEqual({
+      primaryUrl: 'https://cdn.example/object-shaped.mp3',
+      mimeType: 'audio/mpeg',
+      streams: [{
+        url: 'https://cdn.example/object-shaped.mp3',
+        mimeType: 'audio/mpeg',
+        label: null,
+        source: 'resource-file',
+        bitrate: null,
+      }],
+    });
   });
 });

@@ -24,6 +24,14 @@ function createFreshness(datasetVersion, fetchedAt = Date.now()) {
   };
 }
 
+function createPlayback(url, mimeType = 'audio/mpeg') {
+  return {
+    primaryUrl: url,
+    mimeType,
+    streams: [{ url, mimeType }],
+  };
+}
+
 describe('offline versioned persistence', () => {
   beforeEach(async () => {
     await offlineStoreTesting.resetOfflineStore();
@@ -42,7 +50,7 @@ describe('offline versioned persistence', () => {
       1980,
       null,
       {
-        audioUrl: 'https://cdn.example/audio.mp3',
+        playback: createPlayback('https://cdn.example/audio.mp3'),
         metadata: { title: 'Dataset V1 Item', date: '1980', uid: '900' },
         error: null,
         itemUids: ['900'],
@@ -52,7 +60,7 @@ describe('offline versioned persistence', () => {
         id: '900',
         routeId: 'item-900',
         uid: '900',
-        audioUrl: 'https://cdn.example/audio.mp3',
+        playback: createPlayback('https://cdn.example/audio.mp3'),
         metadata: { title: 'Dataset V1 Item', date: '1980', uid: '900' },
       },
       {
@@ -71,6 +79,7 @@ describe('offline versioned persistence', () => {
     expect(matchingCatalog?.datasetVersion).toBe('manifest-v1');
     expect(mismatchedCatalog).toBeNull();
     expect(matchingYear?.metadata?.title).toBe('Dataset V1 Item');
+    expect(matchingYear?.playback?.primaryUrl).toBe('https://cdn.example/audio.mp3');
     expect(matchingYear?.freshness?.datasetVersion).toBe('manifest-v1');
     expect(mismatchedYear).toBeNull();
   });
@@ -80,7 +89,7 @@ describe('offline versioned persistence', () => {
       1980,
       null,
       {
-        audioUrl: 'https://cdn.example/audio.mp3',
+        playback: createPlayback('https://cdn.example/audio.mp3'),
         metadata: { title: 'Old Item', date: '1980', uid: '900' },
         error: null,
         itemUids: ['900'],
@@ -89,7 +98,7 @@ describe('offline versioned persistence', () => {
         id: '900',
         routeId: 'item-900',
         uid: '900',
-        audioUrl: 'https://cdn.example/audio.mp3',
+        playback: createPlayback('https://cdn.example/audio.mp3'),
         metadata: { title: 'Old Item', date: '1980', uid: '900' },
       },
       {

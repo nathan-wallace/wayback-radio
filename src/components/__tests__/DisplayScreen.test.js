@@ -28,7 +28,11 @@ describe('DisplayScreen', () => {
           technicalDetails: [{ label: 'UID', value: '12345' }],
           source: [{ label: 'LOC Item', url: 'https://www.loc.gov/item/example/' }]
         },
-        audioUrl: 'https://cdn.example/audio.mp3',
+        playback: {
+          primaryUrl: 'https://cdn.example/audio.mp3',
+          mimeType: 'audio/mpeg',
+          streams: [{ url: 'https://cdn.example/audio.mp3', mimeType: 'audio/mpeg' }]
+        },
         error: null,
         isLoading: false,
         sessionStatus: 'ready',

@@ -33,7 +33,7 @@ function buildAvailableYearOptions(catalogEntries = []) {
 export default function Radio() {
   const controller = useRadioController();
   const {
-    audioUrl,
+    playback,
     isOn,
     volume,
     availableYears,
@@ -43,7 +43,7 @@ export default function Radio() {
     initComplete,
     sessionStatus
   } = controller;
-  const { transportState } = useAudioManager(audioUrl, isOn, volume);
+  const { transportState } = useAudioManager(playback, isOn, volume);
 
   const catalog = useMemo(
     () => (filteredCatalogEntries.length ? filteredCatalogEntries : buildCatalog(filteredAvailableYears.length ? filteredAvailableYears : availableYears)),

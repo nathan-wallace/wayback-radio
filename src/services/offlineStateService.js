@@ -176,7 +176,7 @@ function getYearFromItemRecord(itemRecord) {
 }
 
 function hasPlayableAudio(itemRecord) {
-  return Boolean(itemRecord?.audioUrl || itemRecord?.metadata?.source?.length);
+  return Boolean(itemRecord?.playback?.primaryUrl || itemRecord?.audioUrl || itemRecord?.metadata?.source?.length);
 }
 
 function buildFavoriteYearSet(yearSelections = [], itemRecords = [], favoritesById = {}) {

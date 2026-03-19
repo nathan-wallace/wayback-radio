@@ -25,7 +25,7 @@ import { parseRadioUrlState, serializeRadioUrlState } from '../utils/radioUrlSta
 
 const initialState = {
   year: 1940,
-  audioUrl: null,
+  playback: null,
   volume: 0.5,
   isOn: false,
   metadata: null,
@@ -60,8 +60,8 @@ function radioReducer(state, action) {
   switch (action.type) {
     case 'SET_YEAR':
       return { ...state, year: action.payload };
-    case 'SET_AUDIO_URL':
-      return { ...state, audioUrl: action.payload };
+    case 'SET_PLAYBACK':
+      return { ...state, playback: action.payload };
     case 'SET_VOLUME':
       return { ...state, volume: action.payload };
     case 'SET_IS_ON':
@@ -103,10 +103,10 @@ function radioReducer(state, action) {
     case 'SET_ERROR':
       return { ...state, error: action.payload };
     case 'APPLY_AUDIO_RESULT': {
-      const { audioUrl, metadata, error, itemUids, itemRouteIds, itemIndex, itemId, sessionStatus } = action.payload;
+      const { playback, metadata, error, itemUids, itemRouteIds, itemIndex, itemId, sessionStatus } = action.payload;
       return {
         ...state,
-        audioUrl,
+        playback,
         metadata,
         error,
         itemUids: itemUids ?? state.itemUids,
@@ -172,7 +172,7 @@ export function useRadioController() {
 
   const {
     year,
-    audioUrl,
+    playback,
     volume,
     isOn,
     metadata,
@@ -207,7 +207,7 @@ export function useRadioController() {
     },
     []
   );
-  const setAudioUrl = useCallback((nextAudioUrl) => dispatch({ type: 'SET_AUDIO_URL', payload: nextAudioUrl }), []);
+  const setPlayback = useCallback((nextPlayback) => dispatch({ type: 'SET_PLAYBACK', payload: nextPlayback }), []);
   const setVolume = useCallback((nextVolume) => dispatch({ type: 'SET_VOLUME', payload: nextVolume }), []);
   const setIsOn = useCallback((nextIsOn) => dispatch({ type: 'SET_IS_ON', payload: nextIsOn }), []);
   const setMetadata = useCallback((nextMetadata) => dispatch({ type: 'SET_METADATA', payload: nextMetadata }), []);
@@ -230,9 +230,9 @@ export function useRadioController() {
 
   const applyAudioResult = useCallback(async (result, updates = {}) => {
     dispatch({
-      type: 'APPLY_AUDIO_RESULT',
-      payload: {
-        audioUrl: result.audioUrl,
+        type: 'APPLY_AUDIO_RESULT',
+        payload: {
+        playback: result.playback,
         metadata: result.metadata,
         error: result.error,
         itemUids: updates.itemUids,
@@ -326,7 +326,7 @@ export function useRadioController() {
     setOverrideAudio(true);
 
     if (!isOn) {
-      dispatch({ type: 'SET_AUDIO_URL', payload: null });
+      dispatch({ type: 'SET_PLAYBACK', payload: null });
       dispatch({ type: 'SET_METADATA', payload: null });
       dispatch({ type: 'SET_ERROR', payload: null });
       dispatch({ type: 'SET_ITEM_INDEX', payload: idx });
@@ -563,7 +563,7 @@ export function useRadioController() {
 
 
   useEffect(() => {
-    if (!initComplete || !isOn || !currentItemId || audioUrl || error || sessionStatus === 'loadingItem' || sessionStatus === 'booting') {
+    if (!initComplete || !isOn || !currentItemId || playback?.primaryUrl || error || sessionStatus === 'loadingItem' || sessionStatus === 'booting') {
       return;
     }
 
@@ -573,7 +573,7 @@ export function useRadioController() {
       itemIndex,
       itemId: currentItemId
     });
-  }, [audioUrl, currentItemId, error, initComplete, isOn, itemIndex, itemRouteIds, itemUids, loadAudioById, sessionStatus, year]);
+  }, [currentItemId, error, initComplete, isOn, itemIndex, itemRouteIds, itemUids, loadAudioById, playback?.primaryUrl, sessionStatus, year]);
 
   useEffect(() => {
     if (!initComplete) {
@@ -633,8 +633,8 @@ export function useRadioController() {
   const controller = useMemo(() => ({
     year,
     setYear: setYearValue,
-    audioUrl,
-    setAudioUrl,
+    playback,
+    setPlayback,
     volume,
     setVolume,
     isOn,
@@ -682,7 +682,6 @@ export function useRadioController() {
     resetFilters,
     refreshOfflineState,
   }), [
-    audioUrl,
     availableYears,
     catalogEntries,
     catalogGeneratedAt,
@@ -705,12 +704,13 @@ export function useRadioController() {
     offlineState,
     overrideAudio,
     playItemByIndex,
+    playback,
     prevItem,
     refreshOfflineState,
     resetFilters,
     screenRef,
     sessionStatus,
-    setAudioUrl,
+    setPlayback,
     setAvailableYears,
     setError,
     setIsOn,

@@ -242,20 +242,116 @@ export function isPlayableSearchItem(item) {
   return asArray(item?.resources).some((resource) => isPlayableResource(resource));
 }
 
-export function getAudioUrlFromResources(itemData) {
-  for (const resource of asArray(itemData?.resources)) {
-    if (resource?.audio) {
-      return resource.audio;
-    }
+function inferMimeType(url) {
+  const normalizedUrl = normalizeText(url).toLowerCase();
+  if (!normalizedUrl) return '';
 
-    const audioFile = asArray(resource?.files).find((file) => (
-      file?.mimetype?.includes('audio') || file?.url?.match(/\.(mp3|wav)$/i)
-    ));
+  if (normalizedUrl.match(/\.mp3($|[?#])/)) return 'audio/mpeg';
+  if (normalizedUrl.match(/\.wav($|[?#])/)) return 'audio/wav';
+  if (normalizedUrl.match(/\.m4a($|[?#])/)) return 'audio/mp4';
+  if (normalizedUrl.match(/\.aac($|[?#])/)) return 'audio/aac';
+  if (normalizedUrl.match(/\.ogg($|[?#])/)) return 'audio/ogg';
+  if (normalizedUrl.match(/\.flac($|[?#])/)) return 'audio/flac';
+  return '';
+}
 
-    if (audioFile) {
-      return audioFile.url;
-    }
+function normalizeStreamCandidate(candidate = {}, fallback = {}) {
+  const url = normalizeText(candidate?.url || fallback?.url);
+  if (!url) return null;
+
+  const mimeType = normalizeText(
+    candidate?.mimeType
+      || candidate?.mimetype
+      || candidate?.type
+      || fallback?.mimeType
+      || inferMimeType(url)
+  );
+
+  const label = normalizeText(candidate?.label || candidate?.download || fallback?.label);
+  const source = normalizeText(candidate?.source || fallback?.source);
+  const bitrate = normalizeText(candidate?.bitrate || fallback?.bitrate);
+
+  return {
+    url,
+    mimeType: mimeType || '',
+    label: label || null,
+    source: source || null,
+    bitrate: bitrate || null,
+  };
+}
+
+function getStreamRank(stream = {}, index = 0) {
+  const mimeType = normalizeText(stream?.mimeType).toLowerCase();
+  const url = normalizeText(stream?.url).toLowerCase();
+  const source = normalizeText(stream?.source).toLowerCase();
+
+  const mimeRank = [
+    ['audio/mpeg', 0],
+    ['audio/mp4', 1],
+    ['audio/aac', 2],
+    ['audio/ogg', 3],
+    ['audio/wav', 4],
+    ['audio/flac', 5],
+  ].find(([value]) => mimeType === value)?.[1] ?? 10;
+
+  const sourceRank = source === 'resource-audio'
+    ? 0
+    : source === 'resource-file'
+      ? 1
+      : 2;
+
+  return [mimeRank, sourceRank, url, index];
+}
+
+function compareRanks(left, right) {
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    if ((left[index] ?? 0) < (right[index] ?? 0)) return -1;
+    if ((left[index] ?? 0) > (right[index] ?? 0)) return 1;
   }
+  return 0;
+}
 
-  return null;
+export function extractPlaybackFromResources(itemData) {
+  const streams = [];
+
+  asArray(itemData?.resources).forEach((resource) => {
+    asArray(resource?.audio).forEach((audioValue) => {
+      const stream = normalizeStreamCandidate(
+        typeof audioValue === 'string'
+          ? { url: audioValue }
+          : audioValue,
+        { source: 'resource-audio' }
+      );
+
+      if (stream) {
+        streams.push(stream);
+      }
+    });
+
+    asArray(resource?.files).forEach((file) => {
+      const stream = normalizeStreamCandidate(file, { source: 'resource-file' });
+      if (!stream) return;
+
+      if (stream.mimeType.includes('audio') || inferMimeType(stream.url)) {
+        streams.push(stream);
+      }
+    });
+  });
+
+  const uniqueStreams = [...new Map(
+    streams.map((stream) => [`${stream.url}::${stream.mimeType}`, stream])
+  ).values()];
+
+  const rankedStreams = uniqueStreams
+    .map((stream, index) => ({ stream, rank: getStreamRank(stream, index) }))
+    .sort((left, right) => compareRanks(left.rank, right.rank))
+    .map(({ stream }) => stream);
+
+  const primary = rankedStreams[0] || null;
+
+  return {
+    primaryUrl: primary?.url || null,
+    mimeType: primary?.mimeType || null,
+    streams: rankedStreams,
+  };
 }
