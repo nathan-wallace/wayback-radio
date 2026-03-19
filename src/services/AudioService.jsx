@@ -53,6 +53,17 @@ let availableYearsCache = null;
 let bootstrapCatalogRefreshPromise = null;
 const bootstrapYearRefreshPromises = new Map();
 
+function shouldAutoRefreshBootstrappedData() {
+  if (typeof globalThis.__WAYBACK_ENABLE_BOOTSTRAP_AUTO_REFRESH__ === 'boolean') {
+    return globalThis.__WAYBACK_ENABLE_BOOTSTRAP_AUTO_REFRESH__;
+  }
+
+  const hostname = globalThis?.location?.hostname;
+  if (!hostname) return true;
+
+  return ['localhost', '127.0.0.1', '[::1]'].includes(hostname);
+}
+
 function createLocApiUnavailableError(message = 'Library of Congress JSON API is unavailable from this origin.') {
   const error = new Error(message);
   error.name = 'LocApiUnavailableError';
@@ -731,7 +742,7 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
 }
 
 function refreshBootstrappedYearInBackground(year, requestedIdentity = null, cacheKey = `${year}-${requestedIdentity || ''}`) {
-  if (shouldSkipLocApiRequests()) {
+  if (shouldSkipLocApiRequests() || !shouldAutoRefreshBootstrappedData()) {
     return Promise.resolve(null);
   }
 
@@ -755,7 +766,7 @@ function refreshBootstrappedYearInBackground(year, requestedIdentity = null, cac
 }
 
 function refreshBootstrappedCatalogInBackground() {
-  if (shouldSkipLocApiRequests()) {
+  if (shouldSkipLocApiRequests() || !shouldAutoRefreshBootstrappedData()) {
     return Promise.resolve(null);
   }
 
@@ -972,6 +983,7 @@ export const __testing = {
     locApiState.reason = null;
   },
   isLocApiUnavailableError,
+  shouldAutoRefreshBootstrappedData,
   getLocApiState() {
     return { ...locApiState };
   },
