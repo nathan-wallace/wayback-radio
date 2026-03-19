@@ -1118,7 +1118,74 @@ export async function fetchAudioByYear(year, requestedIdentity = null, options =
   return loadAudioByYearFromSearch(year, requestedIdentity, cacheKey, options);
 }
 
-export async function fetchAudioById(audioId) {
+function inferMimeTypeFromDirectUrl(audioUrl) {
+  const normalizedUrl = normalizeText(audioUrl);
+  if (!normalizedUrl) return null;
+
+  try {
+    const { pathname } = new URL(normalizedUrl);
+    const lowerPath = pathname.toLowerCase();
+
+    if (lowerPath.endsWith('.mp3')) return 'audio/mpeg';
+    if (lowerPath.endsWith('.wav')) return 'audio/wav';
+    if (lowerPath.endsWith('.ogg') || lowerPath.endsWith('.oga')) return 'audio/ogg';
+    if (lowerPath.endsWith('.m4a')) return 'audio/mp4';
+    if (lowerPath.endsWith('.aac')) return 'audio/aac';
+    if (lowerPath.endsWith('.flac')) return 'audio/flac';
+  } catch (error) {
+    return null;
+  }
+
+  return null;
+}
+
+export function isDirectAudioUrl(audioUrl) {
+  const normalizedUrl = normalizeText(audioUrl);
+  if (!normalizedUrl) return false;
+
+  try {
+    const parsed = new URL(normalizedUrl);
+    return /\.(mp3|wav|ogg|oga|m4a|aac|flac)$/i.test(parsed.pathname);
+  } catch (error) {
+    return false;
+  }
+}
+
+function buildDirectAudioResult(audioUrl) {
+  const normalizedUrl = normalizeText(audioUrl);
+  const mimeType = inferMimeTypeFromDirectUrl(normalizedUrl);
+
+  return normalizeAudioResult({
+    itemId: normalizedUrl,
+    playback: normalizedUrl ? {
+      primaryUrl: normalizedUrl,
+      mimeType,
+      streams: [{
+        url: normalizedUrl,
+        mimeType,
+        label: null,
+        source: 'direct-audio-link',
+        bitrate: null,
+      }],
+    } : null,
+    metadata: mimeType ? { mimeType } : null,
+    error: normalizedUrl ? null : 'No audio found for that id.',
+    source: 'direct-audio-link',
+  });
+}
+
+export async function resolvePlaybackForDirectUrl(audioUrl) {
+  const cacheKey = `direct:${audioUrl}`;
+  if (audioCache.has(cacheKey)) {
+    return audioCache.get(cacheKey);
+  }
+
+  const result = buildDirectAudioResult(audioUrl);
+  audioCache.set(cacheKey, result);
+  return result;
+}
+
+export async function fetchRecordingById(audioId) {
   const cacheKey = `${audioId}`;
   if (audioCache.has(cacheKey)) {
     return audioCache.get(cacheKey);
@@ -1147,16 +1214,11 @@ export async function fetchAudioById(audioId) {
     return datasetResult;
   }
 
-  let requestUrl = audioId;
-  if (!audioId.startsWith('http')) {
-    const normalizedItemId = extractLocItemId(audioId) || normalizeText(audioId);
-    const normalizedUid = extractUid(normalizedItemId) || (/^\d+$/.test(normalizedItemId) ? normalizedItemId : null);
-    requestUrl = normalizedUid
-      ? `${BASE_URL}/item/ihas.${normalizedUid}/?fo=json`
-      : `${BASE_URL}/item/${normalizedItemId}/?fo=json`;
-  } else {
-    requestUrl = `${audioId}?fo=json`;
-  }
+  const normalizedItemId = extractLocItemId(audioId) || normalizeText(audioId);
+  const normalizedUid = extractUid(normalizedItemId) || (/^\d+$/.test(normalizedItemId) ? normalizedItemId : null);
+  const requestUrl = normalizedUid
+    ? `${BASE_URL}/item/ihas.${normalizedUid}/?fo=json`
+    : `${BASE_URL}/item/${normalizedItemId}/?fo=json`;
 
   return fetchWithCache(cacheKey, async () => {
     try {
@@ -1310,6 +1372,7 @@ export const __testing = {
   isPlayableResource,
   isPlayableSearchItem,
   extractPlaybackFromResources,
+  isDirectAudioUrl,
   resetCaches() {
     audioCache.clear();
     yearManifestCache.clear();

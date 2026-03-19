@@ -1,4 +1,4 @@
-import { __testing as audioServiceTesting, CURRENT_DATASET_VERSION, fetchAudioByYear, fetchAudioById, fetchAvailableYears, fetchYearManifest } from '../AudioService';
+import { __testing as audioServiceTesting, CURRENT_DATASET_VERSION, fetchAudioByYear, fetchAvailableYears, fetchRecordingById, fetchYearManifest, resolvePlaybackForDirectUrl } from '../AudioService';
 import { __testing as offlineStoreTesting, saveYearSelection } from '../offlineStore';
 
 function createJsonResponse(payload, { ok = true, status = 200 } = {}) {
@@ -628,7 +628,7 @@ describe('bootstrap manifest behavior', () => {
 });
 
 
-describe('fetchAudioById', () => {
+describe('fetchRecordingById', () => {
   beforeEach(async () => {
     window.history.replaceState({}, '', 'http://localhost/');
     delete global.__WAYBACK_ENABLE_BOOTSTRAP_AUTO_REFRESH__;
@@ -648,11 +648,34 @@ describe('fetchAudioById', () => {
       return createJsonResponse(createItemPayload({ id: 'route-only-1980', year: 1980, title: 'Route Based Item' }));
     });
 
-    const result = await fetchAudioById('route-only-1980');
+    const result = await fetchRecordingById('route-only-1980');
 
     expect(result.error).toBeNull();
     expect(result.itemId).toBe('route-only-1980');
     expect(result.metadata.title).toBe('Route Based Item');
     expect(global.fetch.mock.calls.at(-1)[0]).toBe('https://www.loc.gov/item/route-only-1980/?fo=json');
+  });
+
+  it('returns a ready playback result for direct MP3 URLs without rewriting them to fo=json', async () => {
+    const directUrl = 'https://media.example.com/audio/sample.mp3';
+
+    const result = await resolvePlaybackForDirectUrl(directUrl);
+
+    expect(result.error).toBeNull();
+    expect(result.playback.primaryUrl).toBe(directUrl);
+    expect(result.resolution.source).toBe('direct-audio-link');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns a ready playback result for direct WAV URLs without rewriting them to fo=json', async () => {
+    const directUrl = 'https://media.example.com/audio/sample.wav';
+
+    const result = await resolvePlaybackForDirectUrl(directUrl);
+
+    expect(result.error).toBeNull();
+    expect(result.playback.primaryUrl).toBe(directUrl);
+    expect(result.playback.mimeType).toBe('audio/wav');
+    expect(result.resolution.source).toBe('direct-audio-link');
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

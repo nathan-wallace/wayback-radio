@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import {
   fetchAvailableYears,
   fetchAudioByYear,
-  fetchAudioById,
+  fetchRecordingById,
+  isDirectAudioUrl,
+  resolvePlaybackForDirectUrl,
   mergeCatalogYearEntry,
   CURRENT_DATASET_VERSION,
 } from '../services/AudioService';
@@ -296,8 +298,12 @@ export function useRadioController() {
     })
   ), [applyAudioResult, availableYears, prefetchAdjacentYears, withLatestSelection]);
 
-  const loadAudioById = useCallback(async (audioId, targetYear, updates = {}) => (
-    withLatestSelection('loadingItem', () => fetchAudioById(audioId), async (result) => {
+  const loadAudioById = useCallback(async (audioId, targetYear, updates = {}) => {
+    const fetcher = isDirectAudioUrl(audioId)
+      ? () => resolvePlaybackForDirectUrl(audioId)
+      : () => fetchRecordingById(audioId);
+
+    return withLatestSelection('loadingItem', fetcher, async (result) => {
       await applyAudioResult(result, {
         itemUids: updates.itemUids,
         itemRouteIds: updates.itemRouteIds,
@@ -307,8 +313,8 @@ export function useRadioController() {
       if (targetYear != null) {
         dispatch({ type: 'SET_YEAR', payload: targetYear });
       }
-    })
-  ), [applyAudioResult, withLatestSelection]);
+    });
+  }, [applyAudioResult, withLatestSelection]);
 
   const playItemByIndex = useCallback(async (idx) => {
     if (idx < 0 || idx >= itemUids.length) {
@@ -502,8 +508,9 @@ export function useRadioController() {
         setOverrideAudio(true);
         const numericItemId = Number.parseInt(initialParams.itemId, 10);
         const isUidOnly = Number.isFinite(numericItemId) && String(numericItemId) === String(initialParams.itemId);
+        const isImportedDirectUrl = isDirectAudioUrl(initialParams.itemId);
 
-        if (isUidOnly) {
+        if (isUidOnly || isImportedDirectUrl) {
           const result = await loadAudioById(initialParams.itemId, initYear);
 
           if (result?.metadata?.date) {
@@ -519,6 +526,8 @@ export function useRadioController() {
               }
               dispatch({ type: 'SET_YEAR', payload: metadataYear });
             }
+          } else {
+            dispatch({ type: 'SET_YEAR', payload: initYear });
           }
         } else {
           dispatch({ type: 'SET_YEAR', payload: initYear });
