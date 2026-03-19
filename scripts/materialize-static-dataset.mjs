@@ -1,32 +1,19 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  buildSelectionKeys as buildNormalizedSelectionKeys,
+  extractUid,
+  normalizeMetadata,
+  normalizeText,
+} from '../shared/locNormalization.mjs';
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ARCHIVE_CACHE_PATH = path.join(ROOT_DIR, 'src', 'data', 'archive-cache.json');
 const PUBLIC_DATA_DIR = path.join(ROOT_DIR, 'public', 'data');
 
-function normalizeText(value) {
-  if (Array.isArray(value)) {
-    return normalizeText(value.find((item) => normalizeText(item)));
-  }
-
-  if (value == null) return '';
-  return String(value).trim();
-}
-
-function extractUid(itemId) {
-  if (!itemId) return null;
-  const match = String(itemId).match(/ihas\.(\d+)/);
-  return match ? match[1] : null;
-}
-
 function buildSelectionKeys(routeId, uid, title) {
-  return [...new Set([
-    normalizeText(routeId),
-    normalizeText(uid),
-    normalizeText(title).toLowerCase(),
-  ].filter(Boolean))];
+  return buildNormalizedSelectionKeys(routeId, uid, title);
 }
 
 async function writeJson(relativePath, payload) {
@@ -113,13 +100,17 @@ async function main() {
   const audioByYear = archiveCache?.audioByYear || {};
   await Promise.all(Object.entries(audioByYear).flatMap(([year, audioRecord]) => {
     const routeId = normalizeText(audioRecord?.itemId) || normalizeText(audioRecord?.metadata?.uid) || String(year);
+    const normalizedAudioRecord = {
+      ...audioRecord,
+      metadata: normalizeMetadata(audioRecord?.metadata),
+    };
     const writes = [
-      writeJson(`audio/${year}.json`, audioRecord),
-      writeJson(`catalog/years/${year}.json`, buildYearManifest(year, audioRecord, generatedAt, source)),
+      writeJson(`audio/${year}.json`, normalizedAudioRecord),
+      writeJson(`catalog/years/${year}.json`, buildYearManifest(year, normalizedAudioRecord, generatedAt, source)),
     ];
 
     if (routeId) {
-      writes.push(writeJson(`items/${routeId}.json`, audioRecord));
+      writes.push(writeJson(`items/${routeId}.json`, normalizedAudioRecord));
     }
 
     return writes;

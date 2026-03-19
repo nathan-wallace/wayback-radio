@@ -82,16 +82,33 @@
         "contributor": "Whitman, Walt, 1819-1892, Billy Collins, b. 1941",
         "summary": "Billy Collins reads Walt Whitman's poem at the Library of Congress.",
         "genre": "Literary readings",
+        "recordingInfo": "1903 · Literary readings",
         "image": null,
         "notes": [
           "Recorded at the Library of Congress."
         ],
         "repository": "music division",
         "aka": [],
-        "related_resources": [],
+        "relatedResources": [],
         "formats": [],
         "location": "",
-        "mime_type": "audio"
+        "mimeType": "audio",
+        "source": [
+          {
+            "label": "https://www.loc.gov/item/ihas.100010968/",
+            "url": "https://www.loc.gov/item/ihas.100010968/"
+          }
+        ],
+        "technicalDetails": [
+          {
+            "label": "UID",
+            "value": "100010968"
+          },
+          {
+            "label": "Mime Type",
+            "value": "audio"
+          }
+        ]
       },
       "title": "ihas.100010968",
       "itemId": "ihas.100010968",
@@ -110,16 +127,33 @@
         "contributor": "",
         "summary": "Bootstrap seed for an Edison-era Library of Congress audio item.",
         "genre": "Audio Recording",
+        "recordingInfo": "1917 · Audio Recording",
         "image": null,
         "notes": [
           "Representative early recording seed."
         ],
         "repository": "",
         "aka": [],
-        "related_resources": [],
+        "relatedResources": [],
         "formats": [],
         "location": "",
-        "mime_type": "audio"
+        "mimeType": "audio",
+        "source": [
+          {
+            "label": "https://www.loc.gov/item/ihas.100010382/",
+            "url": "https://www.loc.gov/item/ihas.100010382/"
+          }
+        ],
+        "technicalDetails": [
+          {
+            "label": "UID",
+            "value": "100010382"
+          },
+          {
+            "label": "Mime Type",
+            "value": "audio"
+          }
+        ]
       },
       "title": "ihas.100010382",
       "itemId": "ihas.100010382",
@@ -138,6 +172,7 @@
         "contributor": "Stephens, Harry, Lomax, John A. (John Avery)",
         "summary": "Recorded in Dallas, Texas and later published in 1952.",
         "genre": "sound recording",
+        "recordingInfo": "1942 · sound recording",
         "image": null,
         "notes": [
           "Date: Recorded in 1942.",
@@ -145,10 +180,26 @@
         ],
         "repository": "american folklife center",
         "aka": [],
-        "related_resources": [],
+        "relatedResources": [],
         "formats": [],
         "location": "Texas, United States",
-        "mime_type": "audio"
+        "mimeType": "audio",
+        "source": [
+          {
+            "label": "https://www.loc.gov/item/ihas.200197221/",
+            "url": "https://www.loc.gov/item/ihas.200197221/"
+          }
+        ],
+        "technicalDetails": [
+          {
+            "label": "UID",
+            "value": "200197221"
+          },
+          {
+            "label": "Mime Type",
+            "value": "audio"
+          }
+        ]
       },
       "title": "ihas.200197221",
       "itemId": "ihas.200197221",
@@ -167,16 +218,33 @@
         "contributor": "Stephens, Harry, Lomax, John A. (John Avery)",
         "summary": "Published in 1952 from a 1942 field recording.",
         "genre": "sound recording",
+        "recordingInfo": "1952 · sound recording",
         "image": null,
         "notes": [
           "Bibliographic History: Published on the Library of Congress LP AFS L28."
         ],
         "repository": "american folklife center",
         "aka": [],
-        "related_resources": [],
+        "relatedResources": [],
         "formats": [],
         "location": "Texas, United States",
-        "mime_type": "audio"
+        "mimeType": "audio",
+        "source": [
+          {
+            "label": "https://www.loc.gov/item/ihas.200197221/",
+            "url": "https://www.loc.gov/item/ihas.200197221/"
+          }
+        ],
+        "technicalDetails": [
+          {
+            "label": "UID",
+            "value": "200197221"
+          },
+          {
+            "label": "Mime Type",
+            "value": "audio"
+          }
+        ]
       },
       "title": "ihas.200197221",
       "itemId": "ihas.200197221",
@@ -195,6 +263,7 @@
         "contributor": "Yurchenco, Henrietta, Goodwin",
         "summary": "Gullah spiritual recorded on John's Island, South Carolina.",
         "genre": "sound recording",
+        "recordingInfo": "1970 · sound recording",
         "image": null,
         "notes": [
           "Date: March 29, 1970.",
@@ -202,10 +271,26 @@
         ],
         "repository": "american folklife center",
         "aka": [],
-        "related_resources": [],
+        "relatedResources": [],
         "formats": [],
         "location": "South Carolina, United States",
-        "mime_type": "audio"
+        "mimeType": "audio",
+        "source": [
+          {
+            "label": "https://www.loc.gov/item/ihas.200196384/",
+            "url": "https://www.loc.gov/item/ihas.200196384/"
+          }
+        ],
+        "technicalDetails": [
+          {
+            "label": "UID",
+            "value": "200196384"
+          },
+          {
+            "label": "Mime Type",
+            "value": "audio"
+          }
+        ]
       },
       "title": "ihas.200196384",
       "itemId": "ihas.200196384",
@@ -224,6 +309,7 @@
         "contributor": "Gordon, Robert Winslow, Givens, W. M.",
         "summary": "Bootstrap seed representing the Robert Winslow Gordon Collection release.",
         "genre": "sound recording",
+        "recordingInfo": "1978 · sound recording",
         "image": null,
         "notes": [
           "Source: Published in 1978 in commemoration of the 50th anniversary of the Archive of Folk Culture.",
@@ -231,10 +317,26 @@
         ],
         "repository": "american folklife center",
         "aka": [],
-        "related_resources": [],
+        "relatedResources": [],
         "formats": [],
         "location": "Georgia, United States",
-        "mime_type": "audio"
+        "mimeType": "audio",
+        "source": [
+          {
+            "label": "https://www.loc.gov/item/ihas.200196565",
+            "url": "https://www.loc.gov/item/ihas.200196565"
+          }
+        ],
+        "technicalDetails": [
+          {
+            "label": "UID",
+            "value": "200196565"
+          },
+          {
+            "label": "Mime Type",
+            "value": "audio"
+          }
+        ]
       },
       "title": "ihas.200196565",
       "itemId": "ihas.200196565",

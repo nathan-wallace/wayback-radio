@@ -1,6 +1,15 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  buildMetadata,
+  extractLocItemId,
+  extractUid,
+  extractYear,
+  getAudioUrlFromResources,
+  isPlayableSearchItem,
+  normalizeMetadata,
+} from '../shared/locNormalization.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -197,81 +206,6 @@ function buildSearchUrl(pageNumber = 1) {
   return `${BASE_URL}/search/?${params.toString()}`;
 }
 
-function extractUid(itemId) {
-  if (!itemId) return null;
-  const match = itemId.match(/ihas\.(\d+)/);
-  return match ? match[1] : null;
-}
-
-function extractLocItemId(itemId) {
-  if (!itemId) return null;
-  return String(itemId)
-    .replace(/^https?:\/\/(www\.)?loc\.gov\/item\//, '')
-    .replace(/\/?$/, '');
-}
-
-function extractYear(dateValue) {
-  if (!dateValue) return null;
-  const match = String(dateValue).match(/\b(18|19|20)\d{2}\b/);
-  return match ? Number.parseInt(match[0], 10) : null;
-}
-
-function getAudioUrl(itemData) {
-  for (const resource of itemData.resources || []) {
-    if (resource.audio) return resource.audio;
-    const fileMatch = resource.files?.find((file) => (
-      file.mimetype?.includes('audio') || file.url?.match(/\.(mp3|wav)$/i)
-    ));
-    if (fileMatch) return fileMatch.url;
-  }
-  return null;
-}
-
-function processLinks(items) {
-  if (!Array.isArray(items)) return [];
-  return items
-    .map((item) => {
-      if (typeof item === 'string') return item;
-      if (item && typeof item === 'object' && item.link) return item.link;
-      return null;
-    })
-    .filter(Boolean);
-}
-
-function buildMetadata(itemData, fallbackYear, selectedItem) {
-  return {
-    title: itemData.title || itemData.item?.title || 'Untitled Recording',
-    date: itemData.date || itemData.item?.date || String(fallbackYear),
-    url: itemData.url || selectedItem?.url || '',
-    uid: extractUid(selectedItem?.id || itemData.id),
-    contributor: itemData.item?.contributor?.join(', ') || itemData.contributor?.join(', ') || '',
-    summary: itemData.item?.summary || (Array.isArray(itemData.item?.description)
-      ? itemData.item.description.join(' ')
-      : itemData.description?.[0]) || '',
-    genre: itemData.item?.genre?.join(', ') || (Array.isArray(itemData.type)
-      ? itemData.type.join(', ')
-      : itemData.type) || '',
-    image: itemData.image_url?.[0] || itemData.item?.image_url || null,
-    notes: Array.isArray(itemData.item?.notes) ? itemData.item.notes : [],
-    repository: itemData.item?.repository || '',
-    aka: processLinks(itemData.item?.aka || itemData.aka),
-    related_resources: processLinks(itemData.item?.related_resources),
-    formats: processLinks(itemData.item?.other_formats),
-    location: (itemData.item?.location || []).join(', ') || '',
-    mime_type: (itemData.item?.mime_type || []).join(', ') || ''
-  };
-}
-
-function isPlayableSearchItem(item) {
-  return item.resources?.some((resource) => (
-    resource.audio
-    || resource.url?.match(/\.(mp3|wav)$/i)
-    || resource.files?.some((file) => (
-      file.mimetype?.includes('audio') || file.url?.match(/\.(mp3|wav)$/i)
-    ))
-  ));
-}
-
 async function fetchJson(url) {
   const response = await fetch(url, {
     headers: {
@@ -400,7 +334,7 @@ async function buildYearCache(entry) {
   const itemId = extractLocItemId(selectedItem.id);
   const itemUrl = `${BASE_URL}/item/${itemId}/?fo=json`;
   const itemData = await fetchJson(itemUrl);
-  const audioUrl = getAudioUrl(itemData);
+  const audioUrl = getAudioUrlFromResources(itemData);
 
   if (!audioUrl) {
     return [String(entry.year), null];
@@ -408,7 +342,7 @@ async function buildYearCache(entry) {
 
   return [String(entry.year), {
     audioUrl,
-    metadata: buildMetadata(itemData, entry.year, selectedItem),
+    metadata: buildMetadata(itemData, selectedItem, entry.year),
     title: encodeURIComponent(itemId || itemData.title || String(entry.year)),
     itemId,
     error: null,
@@ -459,6 +393,19 @@ function buildPayload({ catalogEntries, pageCount, audioByYear, generatedAt, sou
   };
 }
 
+function normalizeArchivePayload(payload) {
+  return {
+    ...payload,
+    audioByYear: Object.fromEntries(Object.entries(payload?.audioByYear || {}).map(([year, audioRecord]) => [
+      year,
+      {
+        ...audioRecord,
+        metadata: normalizeMetadata(audioRecord?.metadata),
+      }
+    ]))
+  };
+}
+
 async function writePayload(payload) {
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
@@ -500,7 +447,7 @@ async function main() {
     }
   });
 
-  await writePayload(payload);
+  await writePayload(normalizeArchivePayload(payload));
 }
 
 main().catch(async (error) => {
@@ -514,5 +461,5 @@ main().catch(async (error) => {
 
   console.warn('Falling back to the built-in archive cache seed.');
   console.warn(error);
-  await writePayload(FALLBACK_SEED);
+  await writePayload(normalizeArchivePayload(FALLBACK_SEED));
 });
