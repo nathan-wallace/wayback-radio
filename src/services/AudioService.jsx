@@ -1,5 +1,6 @@
 import archiveCache from '../data/archive-cache.json';
 import { createLinkItems, joinMetadataParts } from '../config/metadataFields';
+import { buildDatasetUrl } from '../utils/datasetUrl';
 import {
   getCatalogSnapshot,
   getItemByLookup,
@@ -15,6 +16,12 @@ import {
 const BASE_URL = 'https://www.loc.gov';
 const AUDIO_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const CATALOG_CACHE_TTL = 24 * 60 * 60 * 1000;
+export const datasetUrls = Object.freeze({
+  manifest: () => buildDatasetUrl('manifest.json'),
+  catalog: () => buildDatasetUrl('catalog.json'),
+  item: (itemId) => buildDatasetUrl(`items/${itemId}.json`),
+  audio: (year) => buildDatasetUrl(`audio/${year}.json`)
+});
 
 function buildFreshness(ttl, now = Date.now()) {
   return {
@@ -1011,6 +1018,8 @@ export function mergeCatalogYearEntry(entries, year, entryPatch = {}) {
 }
 
 export const __testing = {
+  datasetUrls,
+  buildDatasetUrl,
   extractUid,
   extractYear,
   normalizeRouteIdentity,
