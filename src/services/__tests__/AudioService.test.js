@@ -31,6 +31,12 @@ function createItemPayload({ id, year, title }) {
   };
 }
 
+async function flushAsyncWork() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe('fetchAudioByYear', () => {
   beforeEach(async () => {
     jest.restoreAllMocks();
@@ -166,6 +172,53 @@ describe('available years normalization', () => {
       }
     })).toBe('https://cdn.example/object-shaped.mp3');
   });
+
+  it('treats numeric-keyed resource collections as playable when fetching available years', async () => {
+    jest.restoreAllMocks();
+    global.fetch = jest.fn().mockResolvedValue({
+      json: async () => ({
+        results: [
+          {
+            id: 'https://www.loc.gov/item/numeric-keys/',
+            title: 'Numeric keyed resource',
+            date: '1980',
+            resources: {
+              0: {
+                files: {
+                  0: {
+                    url: 'https://cdn.example/numeric-keyed.mp3',
+                    mimetype: 'audio/mpeg'
+                  }
+                }
+              }
+            }
+          }
+        ],
+        pagination: { total: 1, per_page: 100 }
+      })
+    });
+
+    audioServiceTesting.resetCaches();
+    await offlineStoreTesting.resetOfflineStore();
+    localStorage.clear();
+
+    const initial = await fetchAvailableYears();
+
+    expect(initial.bootstrap).toBe(true);
+
+    await flushAsyncWork();
+
+    audioServiceTesting.resetCaches();
+    const result = await fetchAvailableYears();
+
+    expect(result.error).toBeNull();
+    expect(result.years).toEqual([1980]);
+    expect(result.byYear[1980]).toMatchObject({
+      year: 1980,
+      itemCount: 1,
+      status: 'ready'
+    });
+  });
 });
 
 describe('bootstrap manifest behavior', () => {
@@ -194,8 +247,7 @@ describe('bootstrap manifest behavior', () => {
     expect(initial.entries.length).toBeGreaterThan(0);
     expect(global.fetch).toHaveBeenCalledTimes(1);
 
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushAsyncWork();
 
     audioServiceTesting.resetCaches();
     const refreshed = await fetchAvailableYears();
@@ -223,9 +275,7 @@ describe('bootstrap manifest behavior', () => {
     expect(initial.source).toBe('bootstrap-manifest');
     expect(initial.metadata.title).toBe('The night herding song');
 
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushAsyncWork();
 
     audioServiceTesting.resetCaches();
     const refreshed = await fetchAudioByYear(1942);

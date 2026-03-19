@@ -44,6 +44,7 @@ function assembleItemResult(record) {
     metadata: record.metadata ?? null,
     error: record.error ?? null,
     itemId: record.routeId || record.id || null,
+    source: record.source ?? null,
     freshness: buildFreshness(record),
   };
 }

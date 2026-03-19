@@ -389,6 +389,24 @@ function isBootstrapSelectionMatch(cached, requestedIdentity) {
 function asArray(value) {
   if (Array.isArray(value)) return value;
   if (value == null) return [];
+  if (typeof value === 'object') {
+    const keys = Object.keys(value);
+
+    if (keys.length === 0) {
+      return [];
+    }
+
+    if (keys.every((key) => /^\d+$/.test(key))) {
+      return keys
+        .sort((a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10))
+        .map((key) => value[key]);
+    }
+
+    const nestedArrayKey = ['results', 'items', 'entries'].find((key) => Array.isArray(value[key]));
+    if (nestedArrayKey) {
+      return value[nestedArrayKey];
+    }
+  }
   return [value];
 }
 
@@ -424,6 +442,7 @@ function buildItemRecord(result, fallbackId = null) {
     audioUrl: result.audioUrl || null,
     metadata: normalizeMetadata(result.metadata),
     error: result.error || null,
+    source: result.source || null,
   };
 }
 
