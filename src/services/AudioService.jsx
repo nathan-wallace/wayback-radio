@@ -28,6 +28,10 @@ const MAX_CATALOG_PAGES = 100;
 
 const audioCache = new Map();
 const requestCache = new Map();
+const locApiState = {
+  unavailable: false,
+  reason: null,
+};
 const bootstrapAudioByYear = archiveCache?.audioByYear || {};
 const bootstrapCatalogEntries = archiveCache?.catalog?.entries
   || archiveCache?.catalogEntries
@@ -48,6 +52,27 @@ const bootstrapCatalogPayload = bootstrapCatalogEntries.length
 let availableYearsCache = null;
 let bootstrapCatalogRefreshPromise = null;
 const bootstrapYearRefreshPromises = new Map();
+
+function createLocApiUnavailableError(message = 'Library of Congress JSON API is unavailable from this origin.') {
+  const error = new Error(message);
+  error.name = 'LocApiUnavailableError';
+  error.code = 'LOC_API_UNAVAILABLE';
+  error.isLocApiUnavailable = true;
+  return error;
+}
+
+function markLocApiUnavailable(reason = 'unknown') {
+  locApiState.unavailable = true;
+  locApiState.reason = reason;
+}
+
+function isLocApiUnavailableError(error) {
+  return Boolean(error?.isLocApiUnavailable || error?.code === 'LOC_API_UNAVAILABLE');
+}
+
+function shouldSkipLocApiRequests() {
+  return locApiState.unavailable;
+}
 
 function extractUid(itemId) {
   if (!itemId) return null;
@@ -538,8 +563,7 @@ async function loadCatalogFromSearch() {
   let pageCount = 0;
 
   while (currentPage && pageCount < MAX_CATALOG_PAGES) {
-    const response = await fetch(buildCatalogPageUrl(currentPage));
-    const data = await response.json();
+    const data = await fetchJson(buildCatalogPageUrl(currentPage));
     const items = Array.isArray(data?.results) ? data.results : [];
 
     items.forEach((item) => {
@@ -600,8 +624,24 @@ function getAudioUrlFromResources(itemData) {
 }
 
 async function fetchJson(url) {
-  const response = await fetch(url);
-  return response.json();
+  if (shouldSkipLocApiRequests() && String(url).startsWith(BASE_URL)) {
+    throw createLocApiUnavailableError();
+  }
+
+  try {
+    const response = await fetch(url);
+    return response.json();
+  } catch (error) {
+    const isLocRequest = String(url).startsWith(BASE_URL);
+    const isNetworkStyleFailure = error instanceof TypeError || /failed to fetch|network/i.test(normalizeText(error?.message));
+
+    if (isLocRequest && isNetworkStyleFailure) {
+      markLocApiUnavailable('cors-or-network');
+      throw createLocApiUnavailableError();
+    }
+
+    throw error;
+  }
 }
 
 async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKey = `${year}-${requestedIdentity || ''}`) {
@@ -661,7 +701,9 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
       await saveYearSelection(year, normalizedIdentity, result, itemRecord, { ttl: AUDIO_CACHE_TTL, freshness: buildFreshness(AUDIO_CACHE_TTL) });
       return result;
     } catch (error) {
-      console.error('Error fetching audio:', error);
+      if (!isLocApiUnavailableError(error)) {
+        console.error('Error fetching audio:', error);
+      }
       const staleResult = await getStaleYearSelection(year, normalizedIdentity);
       if (staleResult) {
         const normalizedStaleResult = normalizeAudioResult({
@@ -676,7 +718,9 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
       const result = {
         audioUrl: null,
         metadata: null,
-        error: 'Error fetching audio. Try another year.',
+        error: isLocApiUnavailableError(error)
+          ? 'Live Library of Congress data is blocked by this browser origin, so only preloaded recordings are available here.'
+          : 'Error fetching audio. Try another year.',
         itemUids: []
       };
       audioCache.set(cacheKey, result);
@@ -687,13 +731,19 @@ async function loadAudioByYearFromSearch(year, requestedIdentity = null, cacheKe
 }
 
 function refreshBootstrappedYearInBackground(year, requestedIdentity = null, cacheKey = `${year}-${requestedIdentity || ''}`) {
+  if (shouldSkipLocApiRequests()) {
+    return Promise.resolve(null);
+  }
+
   if (bootstrapYearRefreshPromises.has(cacheKey)) {
     return bootstrapYearRefreshPromises.get(cacheKey);
   }
 
   const refreshPromise = loadAudioByYearFromSearch(year, requestedIdentity, cacheKey)
     .catch((error) => {
-      console.error('Error refreshing bootstrapped audio:', error);
+      if (!isLocApiUnavailableError(error)) {
+        console.error('Error refreshing bootstrapped audio:', error);
+      }
       return null;
     })
     .finally(() => {
@@ -705,6 +755,10 @@ function refreshBootstrappedYearInBackground(year, requestedIdentity = null, cac
 }
 
 function refreshBootstrappedCatalogInBackground() {
+  if (shouldSkipLocApiRequests()) {
+    return Promise.resolve(null);
+  }
+
   if (bootstrapCatalogRefreshPromise) {
     return bootstrapCatalogRefreshPromise;
   }
@@ -722,7 +776,9 @@ function refreshBootstrappedCatalogInBackground() {
       return catalogPayload;
     })
     .catch((error) => {
-      console.error('Error refreshing bootstrapped catalog:', error);
+      if (!isLocApiUnavailableError(error)) {
+        console.error('Error refreshing bootstrapped catalog:', error);
+      }
       return null;
     })
     .finally(() => {
@@ -856,7 +912,9 @@ export async function fetchAvailableYears() {
     });
     return availableYearsCache;
   } catch (error) {
-    console.error('Error fetching available years:', error);
+    if (!isLocApiUnavailableError(error)) {
+      console.error('Error fetching available years:', error);
+    }
     const staleCatalog = await getStaleCatalogSnapshot();
 
     if (staleCatalog) {
@@ -870,7 +928,9 @@ export async function fetchAvailableYears() {
     return bootstrapCatalogPayload
       ? {
           ...bootstrapCatalogPayload,
-          error: 'Error fetching available years.',
+          error: isLocApiUnavailableError(error)
+            ? 'Live Library of Congress catalog refresh is blocked by this browser origin. Showing the bundled catalog instead.'
+            : 'Error fetching available years.',
           source: bootstrapCatalogPayload.source || 'bootstrap-manifest',
           bootstrap: true
         }
@@ -908,5 +968,11 @@ export const __testing = {
     availableYearsCache = null;
     bootstrapCatalogRefreshPromise = null;
     bootstrapYearRefreshPromises.clear();
+    locApiState.unavailable = false;
+    locApiState.reason = null;
+  },
+  isLocApiUnavailableError,
+  getLocApiState() {
+    return { ...locApiState };
   },
 };

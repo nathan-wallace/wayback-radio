@@ -284,4 +284,29 @@ describe('bootstrap manifest behavior', () => {
     expect(refreshed.source).toBe('loc-item-search');
     expect(refreshed.metadata.title).toBe('Refreshed 1942');
   });
+
+  it('stops retrying live LOC refreshes after a CORS-style fetch failure', async () => {
+    global.fetch.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    const firstCatalog = await fetchAvailableYears();
+
+    expect(firstCatalog.bootstrap).toBe(true);
+
+    await flushAsyncWork();
+
+    expect(audioServiceTesting.getLocApiState()).toMatchObject({
+      unavailable: true,
+      reason: 'cors-or-network'
+    });
+
+    global.fetch.mockClear();
+
+    const bootstrappedAudio = await fetchAudioByYear(1942);
+
+    expect(bootstrappedAudio.bootstrap).toBe(true);
+
+    await flushAsyncWork();
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
 });
