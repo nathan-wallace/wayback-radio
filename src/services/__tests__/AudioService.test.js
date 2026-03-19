@@ -215,6 +215,108 @@ describe('fetchAudioByYear', () => {
     expect(result.metadata.title).toBe('Cached Result');
   });
 
+  it('keeps fresh cached metadata visible while stale playback is re-resolved for a year selection', async () => {
+    const now = Date.now();
+
+    await saveYearSelection(
+      1980,
+      null,
+      {
+        playback: createPlayback('https://cdn.example/expired.mp3'),
+        metadata: { title: 'Cached Metadata', date: '1980', uid: '901' },
+        error: null,
+        itemUids: ['901'],
+        itemRouteIds: ['cached-1980'],
+      },
+      {
+        id: '901',
+        routeId: 'cached-1980',
+        uid: '901',
+        playback: createPlayback('https://cdn.example/expired.mp3'),
+        metadata: { title: 'Cached Metadata', date: '1980', uid: '901' },
+      },
+      {
+        selectionTtl: 14 * 24 * 60 * 60 * 1000,
+        metadataTtl: 7 * 24 * 60 * 60 * 1000,
+        playbackTtl: 60 * 60 * 1000,
+        freshness: {
+          fetchedAt: now - (2 * 60 * 60 * 1000),
+          expiresAt: now + (6 * 24 * 60 * 60 * 1000),
+        },
+        playbackFreshness: {
+          playbackFetchedAt: now - (3 * 60 * 60 * 1000),
+          playbackExpiresAt: now - (60 * 1000),
+        },
+        datasetVersion: CURRENT_DATASET_VERSION,
+      }
+    );
+
+    mockLocSearchAndItem({
+      results: [
+        createSearchItem({ id: 'cached-1980', year: 1980, title: 'Cached Metadata' })
+      ],
+      item: createItemPayload({ id: 'cached-1980', year: 1980, title: 'Refreshed Playback' })
+    });
+
+    const result = await fetchAudioByYear(1980);
+
+    expect(result.playback.primaryUrl).toBe('https://cdn.example/cached-1980.mp3');
+    expect(result.metadata.title).toBe('Refreshed Playback');
+    expect(result.stalePlayback).toBe(false);
+  });
+
+  it('returns cached metadata without an expired playback URL when playback re-resolution fails for a year selection', async () => {
+    const now = Date.now();
+
+    await saveYearSelection(
+      1980,
+      null,
+      {
+        playback: createPlayback('https://cdn.example/expired.mp3'),
+        metadata: { title: 'Metadata Only', date: '1980', uid: '902' },
+        error: null,
+        itemUids: ['902'],
+        itemRouteIds: ['cached-1980'],
+      },
+      {
+        id: '902',
+        routeId: 'cached-1980',
+        uid: '902',
+        playback: createPlayback('https://cdn.example/expired.mp3'),
+        metadata: { title: 'Metadata Only', date: '1980', uid: '902' },
+      },
+      {
+        selectionTtl: 14 * 24 * 60 * 60 * 1000,
+        metadataTtl: 7 * 24 * 60 * 60 * 1000,
+        playbackTtl: 60 * 60 * 1000,
+        freshness: {
+          fetchedAt: now - (2 * 60 * 60 * 1000),
+          expiresAt: now + (6 * 24 * 60 * 60 * 1000),
+        },
+        playbackFreshness: {
+          playbackFetchedAt: now - (3 * 60 * 60 * 1000),
+          playbackExpiresAt: now - (60 * 1000),
+        },
+        datasetVersion: CURRENT_DATASET_VERSION,
+      }
+    );
+
+    global.fetch.mockImplementation(async (url) => {
+      if (String(url).includes('/data/')) {
+        return notFoundResponse();
+      }
+
+      throw new Error('network down');
+    });
+
+    const result = await fetchAudioByYear(1980);
+
+    expect(result.metadata.title).toBe('Metadata Only');
+    expect(result.playback.primaryUrl).toBeNull();
+    expect(result.pendingAudio).toBe(true);
+    expect(result.source).toBe('stale-playback-metadata-cache');
+  });
+
   it('prefers the materialized static dataset before falling back to LOC search', async () => {
     global.fetch.mockImplementation(async (url) => {
       if (String(url).endsWith('/data/catalog/years/1980.json')) {
@@ -654,6 +756,61 @@ describe('fetchRecordingById', () => {
     expect(result.itemId).toBe('route-only-1980');
     expect(result.metadata.title).toBe('Route Based Item');
     expect(global.fetch.mock.calls.at(-1)[0]).toBe('https://www.loc.gov/item/route-only-1980/?fo=json');
+  });
+
+  it('re-resolves stale playback for cached item metadata without discarding the metadata', async () => {
+    const now = Date.now();
+
+    await saveYearSelection(
+      1940,
+      null,
+      {
+        playback: createPlayback('https://cdn.example/expired-item.mp3'),
+        metadata: { title: 'Cached Item Metadata', date: '1940', uid: '111' },
+        error: null,
+        itemUids: ['111'],
+        itemRouteIds: ['route-item'],
+      },
+      {
+        id: '111',
+        routeId: 'route-item',
+        uid: '111',
+        playback: createPlayback('https://cdn.example/expired-item.mp3'),
+        metadata: { title: 'Cached Item Metadata', date: '1940', uid: '111' },
+      },
+      {
+        selectionTtl: 14 * 24 * 60 * 60 * 1000,
+        metadataTtl: 7 * 24 * 60 * 60 * 1000,
+        playbackTtl: 60 * 60 * 1000,
+        freshness: {
+          fetchedAt: now - (2 * 60 * 60 * 1000),
+          expiresAt: now + (6 * 24 * 60 * 60 * 1000),
+        },
+        playbackFreshness: {
+          playbackFetchedAt: now - (3 * 60 * 60 * 1000),
+          playbackExpiresAt: now - (60 * 1000),
+        },
+        datasetVersion: CURRENT_DATASET_VERSION,
+      }
+    );
+
+    global.fetch.mockImplementation(async (url) => {
+      if (String(url).includes('/data/')) {
+        return notFoundResponse();
+      }
+
+      if (String(url).includes('/item/ihas.111/')) {
+        return createJsonResponse(createItemPayload({ id: 'route-item', year: 1940, title: 'Freshly Resolved Item' }));
+      }
+
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const result = await fetchRecordingById('111');
+
+    expect(result.metadata.title).toBe('Freshly Resolved Item');
+    expect(result.playback.primaryUrl).toBe('https://cdn.example/route-item.mp3');
+    expect(result.stalePlayback).toBe(false);
   });
 
   it('returns a ready playback result for direct MP3 URLs without rewriting them to fo=json', async () => {
