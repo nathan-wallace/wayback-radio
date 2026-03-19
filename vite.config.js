@@ -22,6 +22,7 @@ const isAppShellAssetRequest = ({ url, request }) => (
 
 const isAudioMediaRequest = ({ url, request }) => (
   request.method === 'GET'
+  && url.origin === self.location.origin
   && (
     request.destination === 'audio'
     || /\.(?:mp3|m4a|wav|ogg|aac|flac)(?:\?.*)?$/i.test(url.href)
