@@ -1,5 +1,5 @@
 import { __testing as audioServiceTesting, fetchAudioByYear } from '../AudioService';
-import { __testing as offlineStoreTesting } from '../offlineStore';
+import { __testing as offlineStoreTesting, saveYearSelection } from '../offlineStore';
 
 function createSearchItem({ id, year, title, audio = true }) {
   return {
@@ -103,5 +103,41 @@ describe('fetchAudioByYear', () => {
     expect(result.error).toBeNull();
     expect(result.metadata.title).toBe('First playable');
     expect(global.fetch.mock.calls[1][0]).toContain('/item/first-1980/');
+  });
+
+  it('falls back to stale cached audio when the network request fails', async () => {
+    await saveYearSelection(
+      1980,
+      null,
+      {
+        audioUrl: 'https://cdn.example/stale.mp3',
+        metadata: { title: 'Cached Result', date: '1980', uid: '900' },
+        error: null,
+        itemUids: ['900']
+      },
+      {
+        id: '900',
+        routeId: 'cached-1980',
+        uid: '900',
+        audioUrl: 'https://cdn.example/stale.mp3',
+        metadata: { title: 'Cached Result', date: '1980', uid: '900' },
+      },
+      {
+        ttl: 7 * 24 * 60 * 60 * 1000,
+        freshness: {
+          fetchedAt: Date.parse('2026-02-01T00:00:00.000Z'),
+          expiresAt: Date.parse('2026-02-02T00:00:00.000Z'),
+        }
+      }
+    );
+
+    global.fetch.mockRejectedValue(new Error('network down'));
+
+    const result = await fetchAudioByYear(1980);
+
+    expect(result.stale).toBe(true);
+    expect(result.source).toBe('stale-year-cache');
+    expect(result.audioUrl).toBe('https://cdn.example/stale.mp3');
+    expect(result.metadata.title).toBe('Cached Result');
   });
 });
