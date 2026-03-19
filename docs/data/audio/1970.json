@@ -1,0 +1,46 @@
+{
+  "audioUrl": "https://www.loc.gov/resource/ihas.200196384.0",
+  "metadata": {
+    "title": "Jesus Leads Me All the Way",
+    "date": "1970",
+    "url": "https://www.loc.gov/item/ihas.200196384/",
+    "uid": "200196384",
+    "contributor": "Yurchenco, Henrietta, Goodwin",
+    "summary": "Gullah spiritual recorded on John's Island, South Carolina.",
+    "genre": "sound recording",
+    "recordingInfo": "1970 · sound recording",
+    "image": null,
+    "notes": [
+      "Date: March 29, 1970.",
+      "Venue: Recorded in John's Island, South Carolina."
+    ],
+    "repository": "american folklife center",
+    "aka": [],
+    "relatedResources": [],
+    "formats": [],
+    "location": "South Carolina, United States",
+    "mimeType": "audio",
+    "source": [
+      {
+        "label": "https://www.loc.gov/item/ihas.200196384/",
+        "url": "https://www.loc.gov/item/ihas.200196384/"
+      }
+    ],
+    "technicalDetails": [
+      {
+        "label": "UID",
+        "value": "200196384"
+      },
+      {
+        "label": "Mime Type",
+        "value": "audio"
+      }
+    ]
+  },
+  "title": "ihas.200196384",
+  "itemId": "ihas.200196384",
+  "error": null,
+  "itemUids": [
+    "200196384"
+  ]
+}

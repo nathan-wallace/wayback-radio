@@ -30,6 +30,8 @@ import {
 const BASE_URL = 'https://www.loc.gov';
 const AUDIO_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const CATALOG_CACHE_TTL = 24 * 60 * 60 * 1000;
+const LOC_API_COOLDOWN_MS = 30 * 1000;
+const LOC_API_FAILURE_THRESHOLD = 2;
 export const datasetUrls = Object.freeze({
   manifest: () => buildDatasetUrl('manifest.json'),
   catalog: () => buildDatasetUrl('catalog.json'),
@@ -52,7 +54,8 @@ const audioCache = new Map();
 const yearManifestCache = new Map();
 const requestCache = new Map();
 const locApiState = {
-  unavailable: false,
+  consecutiveFailures: 0,
+  unavailableUntil: 0,
   reason: null,
 };
 const bootstrapAudioByYear = archiveCache?.audioByYear || {};
@@ -97,9 +100,40 @@ function createLocApiUnavailableError(message = 'Library of Congress JSON API is
   return error;
 }
 
+function createHttpStatusError(url, status) {
+  const error = new Error(`Request failed (${status}) for ${url}`);
+  error.name = 'HttpStatusError';
+  error.code = status === 404 ? 'HTTP_NOT_FOUND' : 'HTTP_STATUS_ERROR';
+  error.status = status;
+  error.url = url;
+  return error;
+}
+
+function createJsonParseError(url, cause) {
+  const error = new Error(`Invalid JSON response for ${url}`);
+  error.name = 'JsonParseError';
+  error.code = 'JSON_PARSE_ERROR';
+  error.url = url;
+  error.cause = cause;
+  return error;
+}
+
+function isNotFoundError(error) {
+  return Number(error?.status) === 404 || error?.code === 'HTTP_NOT_FOUND';
+}
+
+function resetLocApiAvailability() {
+  locApiState.consecutiveFailures = 0;
+  locApiState.unavailableUntil = 0;
+  locApiState.reason = null;
+}
+
 function markLocApiUnavailable(reason = 'unknown') {
-  locApiState.unavailable = true;
+  locApiState.consecutiveFailures += 1;
   locApiState.reason = reason;
+  if (locApiState.consecutiveFailures >= LOC_API_FAILURE_THRESHOLD) {
+    locApiState.unavailableUntil = Date.now() + LOC_API_COOLDOWN_MS;
+  }
 }
 
 function isLocApiUnavailableError(error) {
@@ -107,7 +141,7 @@ function isLocApiUnavailableError(error) {
 }
 
 function shouldSkipLocApiRequests() {
-  return locApiState.unavailable;
+  return locApiState.unavailableUntil > Date.now();
 }
 
 function isCrossOriginLocAudioResource(url) {
@@ -195,6 +229,15 @@ function buildCatalogPayload(entries, meta = {}) {
   };
 }
 
+function isValidYearManifestPayload(payload) {
+  return Number.isFinite(Number.parseInt(payload?.year, 10)) && Array.isArray(payload?.items);
+}
+
+function isValidCatalogPayload(payload) {
+  return Array.isArray(payload?.entries)
+    || Array.isArray(payload?.catalog?.entries)
+    || Array.isArray(payload?.availableYears);
+}
 
 function normalizeAudioResult(result) {
   if (!result) return result;
@@ -442,6 +485,170 @@ function getBootstrappedYearResult(year, requestedIdentity = null) {
   return result;
 }
 
+function buildDatasetAudioResult(record, {
+  year,
+  manifest = null,
+  selectedItem = null,
+  source = 'static-dataset',
+} = {}) {
+  const normalizedRecord = normalizeAudioResult(record);
+  if (!normalizedRecord) return null;
+
+  const itemId = normalizeText(
+    normalizedRecord.itemId
+      || manifest?.selectedItemIdentity
+      || selectedItem?.routeId
+      || selectedItem?.normalizedUid
+  ) || null;
+
+  return normalizeBootstrapAudioResult({
+    ...normalizedRecord,
+    itemId,
+    itemUids: manifest?.itemUids || normalizedRecord.itemUids || [],
+    itemRouteIds: manifest?.itemRouteIds || normalizedRecord.itemRouteIds || [],
+    source: normalizedRecord.source || source,
+  });
+}
+
+async function loadCatalogFromDataset() {
+  const datasetCatalog = await fetchDatasetJson(datasetUrls.catalog(), {
+    cacheKey: 'catalog',
+    validate: isValidCatalogPayload,
+  });
+
+  if (datasetCatalog) {
+    return buildCatalogPayload(datasetCatalog.entries || datasetCatalog.catalog?.entries || [], {
+      source: datasetCatalog.source || 'static-dataset-catalog',
+      generatedAt: datasetCatalog.generatedAt || datasetCatalog.catalog?.generatedAt || null,
+      error: null,
+    });
+  }
+
+  const datasetManifest = await fetchDatasetJson(datasetUrls.manifest(), {
+    cacheKey: 'manifest',
+    validate: isValidCatalogPayload,
+  });
+
+  if (!datasetManifest) {
+    return null;
+  }
+
+  return buildCatalogPayload(
+    datasetManifest.catalog?.entries || datasetManifest.entries || (datasetManifest.availableYears || []).map((year) => ({ year })),
+    {
+      source: datasetManifest.catalog?.source || datasetManifest.source || 'static-dataset-manifest',
+      generatedAt: datasetManifest.catalog?.generatedAt || datasetManifest.generatedAt || null,
+      error: null,
+    }
+  );
+}
+
+async function loadYearManifestFromDataset(year, requestedIdentity = null, cacheKey = `${year}-${requestedIdentity || ''}`) {
+  return fetchWithCache(`dataset-year-manifest:${cacheKey}`, async () => {
+    const payload = await fetchDatasetJson(datasetUrls.yearManifest(year), {
+      cacheKey: `year-manifest:${year}`,
+      validate: isValidYearManifestPayload,
+    });
+
+    if (!payload) {
+      return null;
+    }
+
+    const manifest = buildYearManifestPayload(year, payload.items, requestedIdentity, {
+      source: payload.source || 'static-dataset-year-manifest',
+      generatedAt: payload.generatedAt || null,
+    });
+    yearManifestCache.set(cacheKey, manifest);
+    return manifest;
+  });
+}
+
+async function loadItemFromDataset(itemId) {
+  const normalizedItemId = normalizeText(extractLocItemId(itemId) || itemId);
+  if (!normalizedItemId) return null;
+
+  return fetchDatasetJson(datasetUrls.item(normalizedItemId), {
+    cacheKey: `item:${normalizedItemId}`,
+    validate: (payload) => Boolean(payload && (payload.metadata || payload.audioUrl || payload.error != null)),
+  });
+}
+
+async function loadAudioByYearFromDataset(year, requestedIdentity = null, options = {}) {
+  const { deferAudio = false } = options;
+  const normalizedIdentity = normalizeRouteIdentity(requestedIdentity);
+  const manifest = await loadYearManifestFromDataset(year, requestedIdentity);
+
+  if (!manifest) {
+    return null;
+  }
+
+  const selectedItem = manifest.selectedItem;
+  if (!selectedItem) {
+    const emptyResult = {
+      audioUrl: null,
+      metadata: null,
+      error: 'No playable audio found for this year.',
+      itemUids: manifest.itemUids || [],
+      itemRouteIds: manifest.itemRouteIds || [],
+      itemId: null,
+      source: manifest.source || 'static-dataset-year-manifest',
+    };
+    await saveYearSelection(year, normalizedIdentity, emptyResult, null, {
+      ttl: AUDIO_CACHE_TTL,
+      freshness: buildFreshness(AUDIO_CACHE_TTL),
+      datasetVersion: CURRENT_DATASET_VERSION,
+    });
+    return emptyResult;
+  }
+
+  if (deferAudio) {
+    const deferredResult = normalizeAudioResult({
+      audioUrl: null,
+      metadata: buildMetadata(selectedItem, selectedItem, year),
+      error: null,
+      itemUids: manifest.itemUids || [],
+      itemRouteIds: manifest.itemRouteIds || [],
+      itemId: manifest.selectedItemIdentity,
+      source: manifest.source || 'static-dataset-selection',
+      pendingAudio: true,
+    });
+    const deferredItemRecord = buildItemRecord(deferredResult, selectedItem.routeId || selectedItem.uid);
+
+    await saveYearSelection(year, normalizedIdentity, deferredResult, deferredItemRecord, {
+      ttl: AUDIO_CACHE_TTL,
+      freshness: buildFreshness(AUDIO_CACHE_TTL),
+      datasetVersion: CURRENT_DATASET_VERSION,
+    });
+    return deferredResult;
+  }
+
+  const datasetRecord = await loadItemFromDataset(manifest.selectedItemIdentity || selectedItem.routeId || selectedItem.uid)
+    || await fetchDatasetJson(datasetUrls.audio(year), {
+      cacheKey: `audio:${year}`,
+      validate: (payload) => Boolean(payload && (payload.metadata || payload.audioUrl || payload.error != null)),
+    });
+
+  if (!datasetRecord) {
+    return null;
+  }
+
+  const result = buildDatasetAudioResult(datasetRecord, {
+    year,
+    manifest,
+    selectedItem,
+    source: datasetRecord.source || 'static-dataset-item',
+  });
+  const itemRecord = buildItemRecord(result, manifest.selectedItemIdentity || selectedItem.routeId || selectedItem.uid);
+
+  await saveYearSelection(year, normalizedIdentity, result, itemRecord, {
+    ttl: AUDIO_CACHE_TTL,
+    freshness: buildFreshness(AUDIO_CACHE_TTL),
+    datasetVersion: CURRENT_DATASET_VERSION,
+  });
+
+  return result;
+}
+
 async function fetchWithCache(cacheKey, fetcher) {
   if (requestCache.has(cacheKey)) {
     return requestCache.get(cacheKey);
@@ -568,7 +775,27 @@ async function fetchJson(url) {
 
   try {
     const response = await fetch(url);
-    return response.json();
+
+    if (!response || typeof response.json !== 'function') {
+      throw new TypeError(`Invalid fetch response for ${url}`);
+    }
+
+    if (response && 'ok' in response && !response.ok) {
+      throw createHttpStatusError(url, response.status);
+    }
+
+    let payload;
+    try {
+      payload = await response.json();
+    } catch (error) {
+      throw createJsonParseError(url, error);
+    }
+
+    if (String(url).startsWith(BASE_URL)) {
+      resetLocApiAvailability();
+    }
+
+    return payload;
   } catch (error) {
     const isLocRequest = String(url).startsWith(BASE_URL);
     const isNetworkStyleFailure = error instanceof TypeError || /failed to fetch|network/i.test(normalizeText(error?.message));
@@ -578,8 +805,34 @@ async function fetchJson(url) {
       throw createLocApiUnavailableError();
     }
 
+    if (isLocRequest && (Number(error?.status) >= 500 || error?.code === 'JSON_PARSE_ERROR')) {
+      markLocApiUnavailable(error?.code === 'JSON_PARSE_ERROR' ? 'parse-error' : 'server-error');
+    }
+
     throw error;
   }
+}
+
+async function fetchDatasetJson(url, { validate, cacheKey = url } = {}) {
+  return fetchWithCache(`dataset:${cacheKey}`, async () => {
+    try {
+      const payload = await fetchJson(url);
+      if (typeof validate === 'function' && !validate(payload)) {
+        return null;
+      }
+      return payload;
+    } catch (error) {
+      if (isNotFoundError(error)) {
+        return null;
+      }
+
+      if (error?.code === 'JSON_PARSE_ERROR') {
+        return null;
+      }
+
+      throw error;
+    }
+  });
 }
 
 async function loadYearManifestFromSearch(year, requestedIdentity = null, cacheKey = `${year}-${requestedIdentity || ''}`) {
@@ -597,6 +850,11 @@ export async function fetchYearManifest(year, requestedIdentity = null) {
   const cacheKey = `${year}-${requestedIdentity || ''}`;
   if (yearManifestCache.has(cacheKey)) {
     return yearManifestCache.get(cacheKey);
+  }
+
+  const datasetManifest = await loadYearManifestFromDataset(year, requestedIdentity, cacheKey);
+  if (datasetManifest) {
+    return datasetManifest;
   }
 
   const bootstrappedManifest = getBootstrappedYearManifest(year, requestedIdentity);
@@ -788,6 +1046,12 @@ export async function fetchAudioByYear(year, requestedIdentity = null, options =
     return normalizedStoredResult;
   }
 
+  const datasetResult = await loadAudioByYearFromDataset(year, requestedIdentity, options);
+  if (datasetResult) {
+    audioCache.set(cacheKey, datasetResult);
+    return datasetResult;
+  }
+
   const bootstrappedResult = getBootstrappedYearResult(year, requestedIdentity);
   if (bootstrappedResult) {
     refreshBootstrappedYearInBackground(year, requestedIdentity, cacheKey);
@@ -809,6 +1073,21 @@ export async function fetchAudioById(audioId) {
     const normalizedStoredResult = normalizeAudioResult(storedResult);
     audioCache.set(cacheKey, normalizedStoredResult);
     return normalizedStoredResult;
+  }
+
+  const datasetRecord = await loadItemFromDataset(normalizedLookupId);
+  if (datasetRecord) {
+    const datasetResult = buildDatasetAudioResult(datasetRecord, {
+      source: datasetRecord.source || 'static-dataset-item',
+    });
+    const itemRecord = buildItemRecord(datasetResult, normalizedLookupId);
+    audioCache.set(cacheKey, datasetResult);
+    await saveItemRecord(itemRecord, {
+      ttl: AUDIO_CACHE_TTL,
+      freshness: buildFreshness(AUDIO_CACHE_TTL),
+      datasetVersion: CURRENT_DATASET_VERSION,
+    });
+    return datasetResult;
   }
 
   let requestUrl = audioId;
@@ -877,6 +1156,23 @@ export async function fetchAvailableYears() {
       error: null,
       source: storedCatalog.source || 'indexeddb',
       generatedAt: storedCatalog.generatedAt || null
+    });
+    return availableYearsCache;
+  }
+
+  const datasetCatalog = await loadCatalogFromDataset();
+  if (datasetCatalog) {
+    availableYearsCache = {
+      ...datasetCatalog,
+      source: datasetCatalog.source || 'static-dataset-catalog'
+    };
+    await saveCatalogSnapshot({
+      entries: availableYearsCache.entries,
+      source: availableYearsCache.source,
+      generatedAt: availableYearsCache.generatedAt,
+      error: null,
+      freshness: buildFreshness(CATALOG_CACHE_TTL),
+      datasetVersion: CURRENT_DATASET_VERSION,
     });
     return availableYearsCache;
   }
@@ -964,8 +1260,7 @@ export const __testing = {
     availableYearsCache = null;
     bootstrapCatalogRefreshPromise = null;
     bootstrapYearRefreshPromises.clear();
-    locApiState.unavailable = false;
-    locApiState.reason = null;
+    resetLocApiAvailability();
   },
   isLocApiUnavailableError,
   shouldAutoRefreshBootstrappedData,

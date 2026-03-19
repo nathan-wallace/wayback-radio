@@ -1,0 +1,21 @@
+{
+  "year": 1917,
+  "generatedAt": "2026-03-19T00:00:00.000Z",
+  "source": "bootstrap-fallback-seed",
+  "items": [
+    {
+      "uid": "100010382",
+      "normalizedUid": "100010382",
+      "routeId": "ihas.100010382",
+      "title": "America: My country 'tis of thee",
+      "date": "1917",
+      "contributor": "",
+      "hasPlayableAudio": true,
+      "selectionKeys": [
+        "100010382",
+        "america my country tis of thee"
+      ],
+      "order": 0
+    }
+  ]
+}

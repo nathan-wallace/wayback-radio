@@ -1,0 +1,45 @@
+{
+  "audioUrl": "https://www.loc.gov/resource/ihas.100010968.0",
+  "metadata": {
+    "title": "I hear America singing",
+    "date": "1903",
+    "url": "https://www.loc.gov/item/ihas.100010968/",
+    "uid": "100010968",
+    "contributor": "Whitman, Walt, 1819-1892, Billy Collins, b. 1941",
+    "summary": "Billy Collins reads Walt Whitman's poem at the Library of Congress.",
+    "genre": "Literary readings",
+    "recordingInfo": "1903 · Literary readings",
+    "image": null,
+    "notes": [
+      "Recorded at the Library of Congress."
+    ],
+    "repository": "music division",
+    "aka": [],
+    "relatedResources": [],
+    "formats": [],
+    "location": "",
+    "mimeType": "audio",
+    "source": [
+      {
+        "label": "https://www.loc.gov/item/ihas.100010968/",
+        "url": "https://www.loc.gov/item/ihas.100010968/"
+      }
+    ],
+    "technicalDetails": [
+      {
+        "label": "UID",
+        "value": "100010968"
+      },
+      {
+        "label": "Mime Type",
+        "value": "audio"
+      }
+    ]
+  },
+  "title": "ihas.100010968",
+  "itemId": "ihas.100010968",
+  "error": null,
+  "itemUids": [
+    "100010968"
+  ]
+}

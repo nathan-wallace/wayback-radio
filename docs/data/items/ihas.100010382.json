@@ -1,0 +1,45 @@
+{
+  "audioUrl": "https://www.loc.gov/resource/ihas.100010382.0",
+  "metadata": {
+    "title": "America: My country 'tis of thee",
+    "date": "1917",
+    "url": "https://www.loc.gov/item/ihas.100010382/",
+    "uid": "100010382",
+    "contributor": "",
+    "summary": "Bootstrap seed for an Edison-era Library of Congress audio item.",
+    "genre": "Audio Recording",
+    "recordingInfo": "1917 · Audio Recording",
+    "image": null,
+    "notes": [
+      "Representative early recording seed."
+    ],
+    "repository": "",
+    "aka": [],
+    "relatedResources": [],
+    "formats": [],
+    "location": "",
+    "mimeType": "audio",
+    "source": [
+      {
+        "label": "https://www.loc.gov/item/ihas.100010382/",
+        "url": "https://www.loc.gov/item/ihas.100010382/"
+      }
+    ],
+    "technicalDetails": [
+      {
+        "label": "UID",
+        "value": "100010382"
+      },
+      {
+        "label": "Mime Type",
+        "value": "audio"
+      }
+    ]
+  },
+  "title": "ihas.100010382",
+  "itemId": "ihas.100010382",
+  "error": null,
+  "itemUids": [
+    "100010382"
+  ]
+}

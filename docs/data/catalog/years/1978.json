@@ -1,0 +1,21 @@
+{
+  "year": 1978,
+  "generatedAt": "2026-03-19T00:00:00.000Z",
+  "source": "bootstrap-fallback-seed",
+  "items": [
+    {
+      "uid": "200196565",
+      "normalizedUid": "200196565",
+      "routeId": "ihas.200196565",
+      "title": "Deep Down in My Heart",
+      "date": "1978",
+      "contributor": "Gordon, Robert Winslow, Givens, W. M.",
+      "hasPlayableAudio": true,
+      "selectionKeys": [
+        "200196565",
+        "deep down in my heart"
+      ],
+      "order": 0
+    }
+  ]
+}

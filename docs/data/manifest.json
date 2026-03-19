@@ -1,0 +1,68 @@
+{
+  "generatedAt": "2026-03-19T00:00:00.000Z",
+  "source": "bootstrap-manifest",
+  "manifestVersion": "2026-03-19T00:00:00.000Z",
+  "availableYears": [
+    1903,
+    1917,
+    1942,
+    1952,
+    1970,
+    1978
+  ],
+  "catalog": {
+    "generatedAt": "2026-03-19T00:00:00.000Z",
+    "source": "bootstrap-fallback-seed",
+    "pageCount": 0,
+    "entries": [
+      {
+        "year": 1903,
+        "itemCount": 1,
+        "sampleItemIds": [
+          "100010968"
+        ],
+        "status": "ready"
+      },
+      {
+        "year": 1917,
+        "itemCount": 1,
+        "sampleItemIds": [
+          "100010382"
+        ],
+        "status": "ready"
+      },
+      {
+        "year": 1942,
+        "itemCount": 1,
+        "sampleItemIds": [
+          "200197221"
+        ],
+        "status": "ready"
+      },
+      {
+        "year": 1952,
+        "itemCount": 1,
+        "sampleItemIds": [
+          "200197221"
+        ],
+        "status": "ready"
+      },
+      {
+        "year": 1970,
+        "itemCount": 1,
+        "sampleItemIds": [
+          "200196384"
+        ],
+        "status": "ready"
+      },
+      {
+        "year": 1978,
+        "itemCount": 1,
+        "sampleItemIds": [
+          "200196565"
+        ],
+        "status": "ready"
+      }
+    ]
+  }
+}
