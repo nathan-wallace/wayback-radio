@@ -24,8 +24,10 @@ jobs:
           node-version: '18'
           cache: 'npm'
       - run: npm ci
-      - run: npm run generate:archive-cache
+      - run: npm run generate:static-dataset
+      - run: npm run materialize:static-dataset
       - run: npm run build
+      - run: test -f docs/data/manifest.json && test -d docs/data/audio && test -d docs/data/catalog && test -d docs/data/items
       - run: touch docs/.nojekyll
       - uses: actions/upload-pages-artifact@v3
         with:
