@@ -168,6 +168,7 @@ async function assembleYearSelection(record, { ttl } = {}) {
       metadata: null,
       error: record.error || null,
       itemUids: record.itemUids || [],
+      itemRouteIds: record.itemRouteIds || [],
       itemId: null,
       freshness: buildFreshness(record),
     };
@@ -183,6 +184,7 @@ async function assembleYearSelection(record, { ttl } = {}) {
   return {
     ...itemResult,
     itemUids: record.itemUids || [],
+    itemRouteIds: record.itemRouteIds || [],
     freshness: buildFreshness(record),
   };
 }
@@ -213,6 +215,7 @@ export async function saveYearSelection(year, requestedIdentity = null, result, 
     requestedIdentity: requestedIdentity || null,
     itemId: itemRecord?.id || null,
     itemUids: result?.itemUids || [],
+    itemRouteIds: result?.itemRouteIds || [],
     error: result?.error || null,
     ...normalizedFreshness,
   };
