@@ -1,6 +1,20 @@
 import archiveCache from '../data/archive-cache.json';
-import { createLinkItems, joinMetadataParts } from '../config/metadataFields';
 import { buildDatasetUrl } from '../utils/datasetUrl';
+import {
+  asArray,
+  buildMetadata,
+  buildSelectionKeys,
+  extractLocItemId,
+  extractUid,
+  extractYear,
+  getAudioUrlFromResources,
+  isPlayableResource,
+  isPlayableSearchItem,
+  normalizeLocItemId,
+  normalizeMetadata,
+  normalizeRouteIdentity,
+  normalizeText,
+} from '../../shared/locNormalization.mjs';
 import {
   getCatalogSnapshot,
   getItemByLookup,
@@ -115,74 +129,6 @@ function normalizeBootstrapAudioResult(result) {
   };
 }
 
-function extractUid(itemId) {
-  if (!itemId) return null;
-  const match = String(itemId).match(/ihas\.(\d+)/);
-  return match ? match[1] : null;
-}
-
-function extractYear(dateValue) {
-  if (!dateValue) return null;
-  const match = String(dateValue).match(/\b(18|19|20)\d{2}\b/);
-  return match ? Number.parseInt(match[0], 10) : null;
-}
-
-function normalizeText(value) {
-  if (Array.isArray(value)) {
-    return normalizeText(value.find((item) => normalizeText(item)));
-  }
-
-  if (value == null) return '';
-  const text = String(value).trim();
-  return text;
-}
-
-function normalizeList(value) {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => normalizeText(item)).filter(Boolean);
-}
-
-function normalizeImage(value, fallbackAlt = 'Recording cover') {
-  const src = Array.isArray(value)
-    ? value.find((item) => typeof item === 'string' && item.trim())
-    : typeof value === 'string'
-      ? value.trim()
-      : value?.src;
-
-  if (!src) return null;
-
-  return {
-    src,
-    alt: fallbackAlt || 'Recording cover'
-  };
-}
-
-function normalizeLinkItems(items = []) {
-  if (!Array.isArray(items)) return [];
-
-  return createLinkItems(items.map((item) => {
-    if (typeof item === 'string') {
-      return { label: item, url: item };
-    }
-
-    if (item?.url) {
-      return {
-        label: item.label || item.url,
-        url: item.url
-      };
-    }
-
-    if (item?.link) {
-      return {
-        label: item.title || item.label || item.link,
-        url: item.link
-      };
-    }
-
-    return null;
-  }).filter(Boolean));
-}
-
 function normalizeCatalogEntries(entries) {
   if (!Array.isArray(entries)) return [];
 
@@ -249,101 +195,6 @@ function buildCatalogPayload(entries, meta = {}) {
   };
 }
 
-function processLinks(items) {
-  if (!items || !Array.isArray(items)) return [];
-  return items
-    .map((item) => {
-      if (typeof item === 'string') return item;
-      if (item && typeof item === 'object' && item.link) return item.link;
-      return null;
-    })
-    .filter(Boolean);
-}
-
-function buildMetadata(itemData, selectedItem, fallbackYear) {
-  const title = normalizeText(itemData.title || itemData.item?.title) || 'Untitled Recording';
-  const date = normalizeText(itemData.date || itemData.item?.date || fallbackYear?.toString());
-  const url = normalizeText(itemData.url || selectedItem?.url);
-  const genre = normalizeText(itemData.item?.genre || itemData.type);
-  const notes = normalizeList(itemData.item?.notes);
-  const relatedResources = normalizeLinkItems(itemData.item?.related_resources);
-  const formats = normalizeLinkItems(itemData.item?.other_formats);
-  const aka = normalizeLinkItems(itemData.item?.aka || itemData.aka);
-  const metadata = {
-    title,
-    date,
-    url,
-    uid: extractUid(selectedItem?.id || itemData.id),
-    contributor: normalizeText(itemData.item?.contributor || itemData.contributor),
-    summary: normalizeText(
-      itemData.item?.summary
-      || itemData.item?.description
-      || itemData.description?.[0]
-    ),
-    genre,
-    recordingInfo: joinMetadataParts(date, genre),
-    image: normalizeImage(itemData.image_url || itemData.item?.image_url, title),
-    notes,
-    repository: normalizeText(itemData.item?.repository),
-    aka,
-    relatedResources,
-    formats,
-    location: normalizeText(itemData.item?.location),
-    mimeType: normalizeText(itemData.item?.mime_type),
-    source: url ? [{ label: url, url }] : [],
-  };
-
-  metadata.technicalDetails = [
-    metadata.uid ? { label: 'UID', value: metadata.uid } : null,
-    metadata.mimeType ? { label: 'Mime Type', value: metadata.mimeType } : null,
-  ].filter(Boolean);
-
-  return metadata;
-}
-
-function normalizeMetadata(metadata) {
-  if (!metadata) return null;
-
-  const title = normalizeText(metadata.title) || 'Untitled Recording';
-  const date = normalizeText(metadata.date);
-  const genre = normalizeText(metadata.genre);
-  const url = normalizeText(metadata.url);
-  const normalized = {
-    title,
-    date,
-    url,
-    uid: normalizeText(metadata.uid),
-    contributor: normalizeText(metadata.contributor),
-    summary: normalizeText(metadata.summary),
-    genre,
-    recordingInfo: normalizeText(metadata.recordingInfo) || joinMetadataParts(date, genre),
-    image: metadata.image?.src
-      ? metadata.image
-      : normalizeImage(metadata.image, title),
-    notes: normalizeList(metadata.notes),
-    repository: normalizeText(metadata.repository),
-    aka: normalizeLinkItems(metadata.aka),
-    relatedResources: normalizeLinkItems(metadata.relatedResources || metadata.related_resources),
-    formats: normalizeLinkItems(metadata.formats),
-    location: normalizeText(metadata.location),
-    mimeType: normalizeText(metadata.mimeType || metadata.mime_type),
-    source: normalizeLinkItems(metadata.source || (url ? [{ label: url, url }] : [])),
-  };
-
-  normalized.technicalDetails = Array.isArray(metadata.technicalDetails)
-    ? metadata.technicalDetails
-        .map((item) => ({
-          label: normalizeText(item?.label),
-          value: normalizeText(item?.value),
-        }))
-        .filter((item) => item.label && item.value)
-    : [
-        normalized.uid ? { label: 'UID', value: normalized.uid } : null,
-        normalized.mimeType ? { label: 'Mime Type', value: normalized.mimeType } : null,
-      ].filter(Boolean);
-
-  return normalized;
-}
 
 function normalizeAudioResult(result) {
   if (!result) return result;
@@ -354,42 +205,13 @@ function normalizeAudioResult(result) {
   };
 }
 
-function extractLocItemId(itemId) {
-  const normalized = normalizeText(itemId);
-  if (!normalized) return null;
-
-  return normalized
-    .replace(/^https?:\/\/(www\.)?loc\.gov\/item\//, '')
-    .replace(/^item\//, '')
-    .replace(/\/?(\?fo=json)?$/, '')
-    .replace(/^\//, '');
-}
-
-function normalizeRouteIdentity(value) {
-  const raw = normalizeText(value);
-  if (!raw) return null;
-
-  let decoded = raw;
-  try {
-    decoded = decodeURIComponent(raw);
-  } catch (error) {
-    decoded = raw;
-  }
-
-  const normalized = extractLocItemId(decoded) || decoded;
-  return normalized
-    .toLowerCase()
-    .replace(/^ihas\./, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
 
 function buildItemIdentityVariants(item) {
-  const itemId = extractLocItemId(item?.id);
+  const itemId = normalizeLocItemId(item?.id);
   const title = normalizeText(item?.title || item?.item?.title);
   const uid = extractUid(item?.id);
 
-  return [
+  return buildSelectionKeys(
     item?.id,
     itemId,
     uid,
@@ -397,9 +219,7 @@ function buildItemIdentityVariants(item) {
     title,
     title ? encodeURIComponent(title) : null,
     itemId ? encodeURIComponent(itemId) : null,
-  ]
-    .map((candidate) => normalizeRouteIdentity(candidate))
-    .filter(Boolean);
+  );
 }
 
 function getItemRouteId(item, itemData = null) {
@@ -420,7 +240,7 @@ function buildManifestSelectionKeys(item) {
       ? item.requestedIdentityOrder
       : [];
 
-  return [
+  return buildSelectionKeys(
     ...explicitSelectionKeys,
     routeId,
     routeId ? encodeURIComponent(routeId) : null,
@@ -428,10 +248,7 @@ function buildManifestSelectionKeys(item) {
     uid ? `ihas.${uid}` : null,
     title,
     title ? encodeURIComponent(title) : null,
-  ]
-    .map((candidate) => normalizeRouteIdentity(candidate))
-    .filter(Boolean)
-    .filter((candidate, index, collection) => collection.indexOf(candidate) === index);
+  );
 }
 
 function normalizeYearManifestItem(item, fallbackYear = null, index = 0) {
@@ -581,44 +398,6 @@ function isBootstrapSelectionMatch(cached, requestedIdentity) {
   ].map((value) => normalizeRouteIdentity(value)).filter(Boolean);
 
   return candidates.includes(normalizedIdentity);
-}
-
-function asArray(value) {
-  if (Array.isArray(value)) return value;
-  if (value == null) return [];
-  if (typeof value === 'object') {
-    const keys = Object.keys(value);
-
-    if (keys.length === 0) {
-      return [];
-    }
-
-    if (keys.every((key) => /^\d+$/.test(key))) {
-      return keys
-        .sort((a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10))
-        .map((key) => value[key]);
-    }
-
-    const nestedArrayKey = ['results', 'items', 'entries'].find((key) => Array.isArray(value[key]));
-    if (nestedArrayKey) {
-      return value[nestedArrayKey];
-    }
-  }
-  return [value];
-}
-
-function isPlayableResource(resource) {
-  return Boolean(
-    resource?.audio
-    || resource?.url?.match(/\.(mp3|wav)$/i)
-    || asArray(resource?.files).some((file) => (
-      file?.mimetype?.includes('audio') || file?.url?.match(/\.(mp3|wav)$/i)
-    ))
-  );
-}
-
-function isPlayableSearchItem(item) {
-  return asArray(item?.resources).some((resource) => isPlayableResource(resource));
 }
 
 function buildItemRecord(result, fallbackId = null) {
@@ -780,22 +559,6 @@ async function loadCatalogFromSearch() {
     generatedAt: new Date().toISOString(),
     error: null
   });
-}
-
-function getAudioUrlFromResources(itemData) {
-  for (const resource of asArray(itemData?.resources)) {
-    if (resource?.audio) {
-      return resource.audio;
-    }
-
-    const audioFile = asArray(resource?.files).find((file) => (
-      file?.mimetype?.includes('audio') || file?.url?.match(/\.(mp3|wav)$/i)
-    ));
-    if (audioFile) {
-      return audioFile.url;
-    }
-  }
-  return null;
 }
 
 async function fetchJson(url) {
@@ -1189,7 +952,6 @@ export const __testing = {
   buildYearManifestPayload,
   buildYearManifestFromSearchItems,
   normalizeMetadata,
-  processLinks,
   buildItemRecord,
   asArray,
   isPlayableResource,
