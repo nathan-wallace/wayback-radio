@@ -39,6 +39,8 @@ async function flushAsyncWork() {
 
 describe('fetchAudioByYear', () => {
   beforeEach(async () => {
+    window.history.replaceState({}, '', 'http://localhost/');
+    delete global.__WAYBACK_ENABLE_BOOTSTRAP_AUTO_REFRESH__;
     jest.restoreAllMocks();
     global.fetch = jest.fn();
     audioServiceTesting.resetCaches();
@@ -223,6 +225,8 @@ describe('available years normalization', () => {
 
 describe('bootstrap manifest behavior', () => {
   beforeEach(async () => {
+    window.history.replaceState({}, '', 'http://localhost/');
+    delete global.__WAYBACK_ENABLE_BOOTSTRAP_AUTO_REFRESH__;
     jest.restoreAllMocks();
     global.fetch = jest.fn();
     audioServiceTesting.resetCaches();
@@ -283,6 +287,19 @@ describe('bootstrap manifest behavior', () => {
     expect(refreshed.bootstrap).toBeUndefined();
     expect(refreshed.source).toBe('loc-item-search');
     expect(refreshed.metadata.title).toBe('Refreshed 1942');
+  });
+
+  it('skips automatic bootstrap refreshes when the override disables them', async () => {
+    global.__WAYBACK_ENABLE_BOOTSTRAP_AUTO_REFRESH__ = false;
+
+    const initial = await fetchAvailableYears();
+
+    expect(initial.bootstrap).toBe(true);
+    expect(audioServiceTesting.shouldAutoRefreshBootstrappedData()).toBe(false);
+
+    await flushAsyncWork();
+
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('stops retrying live LOC refreshes after a CORS-style fetch failure', async () => {
