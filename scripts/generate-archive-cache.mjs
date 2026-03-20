@@ -27,6 +27,7 @@ const MAX_SAMPLE_IDS = 3;
 const MAX_CATALOG_PAGES = 100;
 const MAX_BOOTSTRAP_AUDIO_YEARS = 6;
 const LOC_REQUEST_DELAY_MS = 250;
+const LOC_MAX_REQUEST_DELAY_MS = 8000;
 const LOC_FETCH_RETRY_LIMIT = 5;
 const RETRYABLE_HTTP_STATUSES = new Set([429, 500, 502, 503, 504]);
 const FEATURED_BOOTSTRAP_YEARS = [1903, 1917, 1942, 1952, 1970, 1978];
@@ -215,6 +216,36 @@ function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+let currentLocRequestDelayMs = LOC_REQUEST_DELAY_MS;
+let locCooldownUntil = 0;
+
+async function waitForLocAvailability() {
+  const waitMilliseconds = Math.max(0, locCooldownUntil - Date.now());
+  if (waitMilliseconds > 0) {
+    await sleep(waitMilliseconds);
+  }
+}
+
+function increaseLocRequestDelay(delayHintMilliseconds = null) {
+  const retryDelay = Number.isFinite(delayHintMilliseconds) && delayHintMilliseconds >= 0
+    ? delayHintMilliseconds
+    : currentLocRequestDelayMs * 2;
+
+  currentLocRequestDelayMs = Math.min(
+    LOC_MAX_REQUEST_DELAY_MS,
+    Math.max(LOC_REQUEST_DELAY_MS, retryDelay)
+  );
+  locCooldownUntil = Date.now() + currentLocRequestDelayMs;
+}
+
+function recordSuccessfulLocRequest() {
+  currentLocRequestDelayMs = Math.max(
+    LOC_REQUEST_DELAY_MS,
+    Math.floor(currentLocRequestDelayMs * 0.85)
+  );
+  locCooldownUntil = 0;
+}
+
 function parseRetryAfterMilliseconds(value) {
   if (!value) return null;
 
@@ -256,6 +287,8 @@ async function fetchJson(url) {
       console.warn(`Retrying ${url} (${retryLabel})...`);
     }
 
+    await waitForLocAvailability();
+
     let response;
 
     try {
@@ -270,6 +303,7 @@ async function fetchJson(url) {
       }
 
       const delay = buildRetryDelayMilliseconds(attempt);
+      increaseLocRequestDelay(delay);
       console.warn(`Network error for ${url}; waiting ${delay}ms before retry.`, error);
       await sleep(delay);
       continue;
@@ -277,7 +311,8 @@ async function fetchJson(url) {
 
     if (response.ok) {
       const payload = await response.json();
-      await sleep(LOC_REQUEST_DELAY_MS);
+      recordSuccessfulLocRequest();
+      await sleep(currentLocRequestDelayMs);
       return payload;
     }
 
@@ -285,11 +320,15 @@ async function fetchJson(url) {
     const retryable = RETRYABLE_HTTP_STATUSES.has(response.status);
 
     if (!retryable || attempt === LOC_FETCH_RETRY_LIMIT) {
+      if (response.status === 429) {
+        increaseLocRequestDelay(retryAfterMilliseconds);
+      }
       throw createHttpError(url, response.status, retryAfterMilliseconds);
     }
 
     const delay = buildRetryDelayMilliseconds(attempt, retryAfterMilliseconds);
-    console.warn(`Request throttled (${response.status}) for ${url}; waiting ${delay}ms before retry.`);
+    increaseLocRequestDelay(delay);
+    console.warn(`Request throttled (${response.status}) for ${url}; waiting ${delay}ms before retry. Next LOC request delay: ${currentLocRequestDelayMs}ms.`);
     await sleep(delay);
   }
 
@@ -547,7 +586,7 @@ async function main() {
         continue;
       }
 
-      throw error;
+      console.warn(`Skipped bootstrap audio for ${entry.year}: ${error?.message || error}`);
     }
   }
 
