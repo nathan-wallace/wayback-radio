@@ -33,10 +33,10 @@ const FALLBACK_SEED = {
   source: 'bootstrap-manifest',
   sourceMetadata: {
     generator: 'scripts/generate-archive-cache.mjs',
-    strategy: 'fallback-seed',
+    strategy: 'fallback-seed-limited',
     searchUrl: buildSearchUrl(1),
     itemUrlTemplate: `${BASE_URL}/item/{itemId}/?fo=json`,
-    notes: 'Static fallback seed used when the Library of Congress API is unavailable during generation.'
+    notes: 'Limited fallback seed used when the Library of Congress API path is blocked during generation; full LOC ingestion requires a more reliable source because this seed is too small to replace the catalog.'
   },
   catalog: {
     generatedAt: '2026-03-19T00:00:00.000Z',
