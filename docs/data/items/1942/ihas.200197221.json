@@ -2,16 +2,17 @@
   "audioUrl": "https://www.loc.gov/resource/ihas.200197221.0",
   "metadata": {
     "title": "The night herding song",
-    "date": "1952",
+    "date": "1942",
     "url": "https://www.loc.gov/item/ihas.200197221/",
     "uid": "200197221",
     "contributor": "Stephens, Harry, Lomax, John A. (John Avery)",
-    "summary": "Published in 1952 from a 1942 field recording.",
+    "summary": "Recorded in Dallas, Texas and later published in 1952.",
     "genre": "sound recording",
-    "recordingInfo": "1952 · sound recording",
+    "recordingInfo": "1942 · sound recording",
     "image": null,
     "notes": [
-      "Bibliographic History: Published on the Library of Congress LP AFS L28."
+      "Date: Recorded in 1942.",
+      "Venue: Recorded in Dallas, Texas."
     ],
     "repository": "american folklife center",
     "aka": [],
@@ -42,6 +43,4 @@
   "itemUids": [
     "200197221"
   ]
-}
-
 }

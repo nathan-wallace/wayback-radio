@@ -10,7 +10,7 @@ const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const DATASET_BASE_PATH_PATTERN = escapeRegex(DATASET_BASE_PATH);
 const DATASET_MANIFEST_REQUEST_PATTERN = new RegExp(`^${DATASET_BASE_PATH_PATTERN}manifest\\.json$`);
 const CATALOG_MANIFEST_REQUEST_PATTERN = new RegExp(`^${DATASET_BASE_PATH_PATTERN}catalog(?:\/(?:index|years?))?(?:\/[^/]+)?\\.json$`);
-const ITEM_MANIFEST_REQUEST_PATTERN = new RegExp(`^${DATASET_BASE_PATH_PATTERN}items\/[^/]+\\.json$`);
+const ITEM_MANIFEST_REQUEST_PATTERN = new RegExp(`^${DATASET_BASE_PATH_PATTERN}items\/.+\\.json$`);
 const AUDIO_MANIFEST_REQUEST_PATTERN = new RegExp(`^${DATASET_BASE_PATH_PATTERN}audio\/[^/]+\\.json$`);
 const isLocJsonRequest = ({ url, request }) => (
   request.method === 'GET'

@@ -41,6 +41,8 @@ export const datasetUrls = Object.freeze({
   catalog: () => buildDatasetUrl('catalog.json'),
   yearManifest: (year) => buildDatasetUrl(`catalog/years/${year}.json`),
   item: (itemId) => buildDatasetUrl(`items/${itemId}.json`),
+  yearItem: (year, itemId) => buildDatasetUrl(`items/${year}/${itemId}.json`),
+  itemPath: (relativePath) => buildDatasetUrl(relativePath),
   audio: (year) => buildDatasetUrl(`audio/${year}.json`)
 });
 
@@ -441,6 +443,7 @@ function normalizeYearManifestItem(item, fallbackYear = null, index = 0) {
 
   const normalizedUid = normalizeText(item.normalizedUid || item.uid) || null;
   const routeId = normalizeText(item.routeId) || null;
+  const payloadPath = normalizeText(item.payloadPath) || null;
   const title = normalizeText(item.title) || null;
   const contributor = normalizeText(item.contributor) || '';
   const date = normalizeText(item.date || fallbackYear) || null;
@@ -450,6 +453,7 @@ function normalizeYearManifestItem(item, fallbackYear = null, index = 0) {
     uid: normalizedUid,
     normalizedUid,
     routeId,
+    payloadPath,
     title,
     date,
     contributor,
@@ -705,14 +709,53 @@ async function loadYearManifestFromDataset(year, requestedIdentity = null, cache
   });
 }
 
-async function loadItemFromDataset(itemId) {
-  const normalizedItemId = normalizeText(extractLocItemId(itemId) || itemId);
-  if (!normalizedItemId) return null;
+function buildDatasetItemRequestCandidates(itemLookup = {}) {
+  const itemId = normalizeText(extractLocItemId(itemLookup?.itemId) || itemLookup?.itemId);
+  const year = Number.parseInt(itemLookup?.year, 10);
+  const payloadPath = normalizeText(itemLookup?.payloadPath);
+  const candidates = [];
 
-  return fetchDatasetJson(datasetUrls.item(normalizedItemId), {
-    cacheKey: `item:${normalizedItemId}`,
-    validate: (payload) => Boolean(payload && (payload.metadata || payload.playback || payload.audioUrl || payload.error != null)),
-  });
+  if (payloadPath) {
+    candidates.push({
+      url: datasetUrls.itemPath(payloadPath),
+      cacheKey: `item-path:${payloadPath}`,
+    });
+  }
+
+  if (Number.isFinite(year) && itemId) {
+    candidates.push({
+      url: datasetUrls.yearItem(year, itemId),
+      cacheKey: `item-year:${year}:${itemId}`,
+    });
+  }
+
+  if (itemId) {
+    candidates.push({
+      url: datasetUrls.item(itemId),
+      cacheKey: `item:${itemId}`,
+    });
+  }
+
+  return candidates;
+}
+
+async function loadItemFromDataset(itemLookup) {
+  const requestCandidates = buildDatasetItemRequestCandidates(
+    typeof itemLookup === 'string' ? { itemId: itemLookup } : (itemLookup || {})
+  );
+
+  for (const candidate of requestCandidates) {
+    const payload = await fetchDatasetJson(candidate.url, {
+      cacheKey: candidate.cacheKey,
+      validate: (record) => Boolean(record && (record.metadata || record.playback || record.audioUrl || record.error != null)),
+    });
+
+    if (payload) {
+      return payload;
+    }
+  }
+
+  return null;
 }
 
 async function loadAudioByYearFromDataset(year, requestedIdentity = null, options = {}) {
@@ -772,7 +815,11 @@ async function loadAudioByYearFromDataset(year, requestedIdentity = null, option
     return deferredResult;
   }
 
-  const datasetRecord = await loadItemFromDataset(manifest.selectedItemIdentity || selectedItem.routeId || selectedItem.uid)
+  const datasetRecord = await loadItemFromDataset({
+    itemId: manifest.selectedItemIdentity || selectedItem.routeId || selectedItem.uid,
+    year,
+    payloadPath: selectedItem?.payloadPath,
+  })
     || await fetchDatasetJson(datasetUrls.audio(year), {
       cacheKey: `audio:${year}`,
       validate: (payload) => Boolean(payload && (payload.metadata || payload.playback || payload.audioUrl || payload.error != null)),
@@ -1346,8 +1393,16 @@ export async function resolvePlaybackForDirectUrl(audioUrl) {
   return result;
 }
 
-export async function fetchRecordingById(audioId) {
-  const cacheKey = `${audioId}`;
+export async function fetchRecordingById(audioId, options = {}) {
+  const normalizedYear = Number.parseInt(options?.year, 10);
+  const normalizedPayloadPath = normalizeText(options?.payloadPath) || null;
+  const cacheKey = Number.isFinite(normalizedYear)
+    ? `${normalizedYear}:${audioId}`
+    : normalizedPayloadPath
+      ? `${normalizedPayloadPath}:${audioId}`
+      : `${audioId}`;
+  const allowSharedItemCache = !Number.isFinite(normalizedYear) && !normalizedPayloadPath;
+
   if (audioCache.has(cacheKey)) {
     const cached = audioCache.get(cacheKey);
     if (canReuseMemoryAudioResult(cached)) {
@@ -1357,11 +1412,13 @@ export async function fetchRecordingById(audioId) {
   }
 
   const normalizedLookupId = extractLocItemId(audioId) || normalizeText(audioId);
-  const storedResult = await getItemByLookup(normalizedLookupId, {
-    metadataTtl: ITEM_METADATA_CACHE_TTL,
-    playbackTtl: DEFAULT_PLAYBACK_URL_CACHE_TTL,
-    datasetVersion: CURRENT_DATASET_VERSION,
-  });
+  const storedResult = allowSharedItemCache
+    ? await getItemByLookup(normalizedLookupId, {
+      metadataTtl: ITEM_METADATA_CACHE_TTL,
+      playbackTtl: DEFAULT_PLAYBACK_URL_CACHE_TTL,
+      datasetVersion: CURRENT_DATASET_VERSION,
+    })
+    : null;
   if (storedResult) {
     const normalizedStoredResult = normalizeAudioResult(storedResult);
     if (!normalizedStoredResult?.resolution?.pendingAudio && !normalizedStoredResult?.stalePlayback) {
@@ -1370,21 +1427,27 @@ export async function fetchRecordingById(audioId) {
     }
   }
 
-  const datasetRecord = await loadItemFromDataset(normalizedLookupId);
+  const datasetRecord = await loadItemFromDataset({
+    itemId: normalizedLookupId,
+    year: normalizedYear,
+    payloadPath: normalizedPayloadPath,
+  });
   if (datasetRecord) {
     const datasetResult = withResultFreshness(buildDatasetAudioResult(datasetRecord, {
       source: datasetRecord.source || 'static-dataset-item',
     }));
     const itemRecord = buildItemRecord(datasetResult, normalizedLookupId);
     audioCache.set(cacheKey, datasetResult);
-    const freshness = buildResultFreshness(datasetResult);
-    await saveItemRecord(itemRecord, {
-      metadataTtl: ITEM_METADATA_CACHE_TTL,
-      playbackTtl: resolvePlaybackCacheTtl(datasetResult),
-      freshness: freshness.metadataFreshness,
-      playbackFreshness: freshness.playbackFreshness,
-      datasetVersion: CURRENT_DATASET_VERSION,
-    });
+    if (allowSharedItemCache) {
+      const freshness = buildResultFreshness(datasetResult);
+      await saveItemRecord(itemRecord, {
+        metadataTtl: ITEM_METADATA_CACHE_TTL,
+        playbackTtl: resolvePlaybackCacheTtl(datasetResult),
+        freshness: freshness.metadataFreshness,
+        playbackFreshness: freshness.playbackFreshness,
+        datasetVersion: CURRENT_DATASET_VERSION,
+      });
+    }
     return datasetResult;
   }
 
