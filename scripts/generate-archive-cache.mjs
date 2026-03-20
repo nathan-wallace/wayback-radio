@@ -26,6 +26,9 @@ const SEARCH_PARAMS = {
 const MAX_SAMPLE_IDS = 3;
 const MAX_CATALOG_PAGES = 100;
 const MAX_BOOTSTRAP_AUDIO_YEARS = 6;
+const LOC_REQUEST_DELAY_MS = 250;
+const LOC_FETCH_RETRY_LIMIT = 5;
+const RETRYABLE_HTTP_STATUSES = new Set([429, 500, 502, 503, 504]);
 const FEATURED_BOOTSTRAP_YEARS = [1903, 1917, 1942, 1952, 1970, 1978];
 const FALLBACK_SEED = {
   generatedAt: '2026-03-19T00:00:00.000Z',
@@ -208,18 +211,89 @@ function buildSearchUrl(pageNumber = 1) {
   return `${BASE_URL}/search/?${params.toString()}`;
 }
 
-async function fetchJson(url) {
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'wayback-radio-cache-builder/1.0'
-    }
-  });
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
-  if (!response.ok) {
-    throw new Error(`Request failed (${response.status}) for ${url}`);
+function parseRetryAfterMilliseconds(value) {
+  if (!value) return null;
+
+  const seconds = Number.parseFloat(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.ceil(seconds * 1000);
   }
 
-  return response.json();
+  const retryAt = Date.parse(value);
+  if (Number.isFinite(retryAt)) {
+    return Math.max(0, retryAt - Date.now());
+  }
+
+  return null;
+}
+
+function buildRetryDelayMilliseconds(attempt, retryAfterMilliseconds = null) {
+  if (Number.isFinite(retryAfterMilliseconds) && retryAfterMilliseconds >= 0) {
+    return retryAfterMilliseconds;
+  }
+
+  const exponentialDelay = Math.min(8000, 500 * (2 ** Math.max(0, attempt - 1)));
+  const jitter = Math.floor(Math.random() * 250);
+  return exponentialDelay + jitter;
+}
+
+function createHttpError(url, status, retryAfterMilliseconds = null) {
+  const error = new Error(`Request failed (${status}) for ${url}`);
+  error.name = 'HttpError';
+  error.status = status;
+  error.retryAfterMilliseconds = retryAfterMilliseconds;
+  return error;
+}
+
+async function fetchJson(url) {
+  for (let attempt = 1; attempt <= LOC_FETCH_RETRY_LIMIT; attempt += 1) {
+    if (attempt > 1) {
+      const retryLabel = attempt === LOC_FETCH_RETRY_LIMIT ? 'final attempt' : `attempt ${attempt} of ${LOC_FETCH_RETRY_LIMIT}`;
+      console.warn(`Retrying ${url} (${retryLabel})...`);
+    }
+
+    let response;
+
+    try {
+      response = await fetch(url, {
+        headers: {
+          'User-Agent': 'wayback-radio-cache-builder/1.0'
+        }
+      });
+    } catch (error) {
+      if (attempt === LOC_FETCH_RETRY_LIMIT) {
+        throw error;
+      }
+
+      const delay = buildRetryDelayMilliseconds(attempt);
+      console.warn(`Network error for ${url}; waiting ${delay}ms before retry.`, error);
+      await sleep(delay);
+      continue;
+    }
+
+    if (response.ok) {
+      const payload = await response.json();
+      await sleep(LOC_REQUEST_DELAY_MS);
+      return payload;
+    }
+
+    const retryAfterMilliseconds = parseRetryAfterMilliseconds(response.headers.get('retry-after'));
+    const retryable = RETRYABLE_HTTP_STATUSES.has(response.status);
+
+    if (!retryable || attempt === LOC_FETCH_RETRY_LIMIT) {
+      throw createHttpError(url, response.status, retryAfterMilliseconds);
+    }
+
+    const delay = buildRetryDelayMilliseconds(attempt, retryAfterMilliseconds);
+    console.warn(`Request throttled (${response.status}) for ${url}; waiting ${delay}ms before retry.`);
+    await sleep(delay);
+  }
+
+  throw new Error(`Failed to fetch ${url}`);
 }
 
 async function readExistingCache() {
@@ -280,9 +354,25 @@ async function fetchCatalogWithSamples() {
   const yearlySamples = new Map();
   let currentPage = 1;
   let pageCount = 0;
+  let halted = false;
+  let haltReason = null;
 
   while (currentPage && pageCount < MAX_CATALOG_PAGES) {
-    const data = await fetchJson(buildSearchUrl(currentPage));
+    let data;
+
+    try {
+      data = await fetchJson(buildSearchUrl(currentPage));
+    } catch (error) {
+      if (pageCount === 0) {
+        throw error;
+      }
+
+      halted = true;
+      haltReason = error?.message || 'Unknown crawler failure';
+      console.warn(`Stopping catalog crawl after ${pageCount} successful pages: ${haltReason}`);
+      break;
+    }
+
     const results = Array.isArray(data?.results) ? data.results : [];
 
     for (const item of results) {
@@ -327,7 +417,9 @@ async function fetchCatalogWithSamples() {
 
   return {
     entries: Array.from(yearlySamples.values()).sort((a, b) => a.year - b.year),
-    pageCount
+    pageCount,
+    halted,
+    haltReason
   };
 }
 
@@ -425,18 +517,37 @@ async function writePayload(payload) {
 }
 
 async function main() {
+  const existingCache = await readExistingCache();
+
   console.log('Fetching yearly archive catalog from the Library of Congress API...');
-  const { entries: catalogEntries, pageCount } = await fetchCatalogWithSamples();
+  const { entries: catalogEntries, pageCount, halted, haltReason } = await fetchCatalogWithSamples();
+
+  if (halted && existingCache?.catalog?.entries?.length > catalogEntries.length) {
+    console.warn('Catalog crawl stopped early and the existing cache is more complete; keeping the current cache file.');
+    return;
+  }
+
   const bootstrapEntries = pickBootstrapAudioEntries(catalogEntries);
   const audioByYear = {};
 
   for (const entry of bootstrapEntries) {
-    const [year, yearCache] = await buildYearCache(entry);
-    if (yearCache) {
-      audioByYear[year] = yearCache;
-      console.log(`Cached bootstrap audio for ${year}`);
-    } else {
-      console.warn(`Skipped ${year}: no audio URL found in item payload.`);
+    try {
+      const [year, yearCache] = await buildYearCache(entry);
+      if (yearCache) {
+        audioByYear[year] = yearCache;
+        console.log(`Cached bootstrap audio for ${year}`);
+      } else {
+        console.warn(`Skipped ${year}: no audio URL found in item payload.`);
+      }
+    } catch (error) {
+      const fallbackYearCache = existingCache?.audioByYear?.[String(entry.year)] || null;
+      if (fallbackYearCache) {
+        audioByYear[String(entry.year)] = fallbackYearCache;
+        console.warn(`Reused existing bootstrap audio for ${entry.year}: ${error?.message || error}`);
+        continue;
+      }
+
+      throw error;
     }
   }
 
@@ -455,7 +566,9 @@ async function main() {
       pageSize: Number.parseInt(SEARCH_PARAMS.c, 10),
       pageCount,
       bootstrapAudioYears: Object.keys(audioByYear).map((year) => Number.parseInt(year, 10)),
-      strategy: 'full-catalog-small-audio-seed'
+      strategy: halted ? 'partial-catalog-small-audio-seed' : 'full-catalog-small-audio-seed',
+      haltedEarly: halted,
+      haltReason: haltReason || null
     }
   });
 
