@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url';
 import {
   buildMetadata,
   extractLocItemId,
+  extractPlaybackFromResources,
   extractUid,
   extractYear,
-  getAudioUrlFromResources,
   isPlayableSearchItem,
   normalizeMetadata,
 } from '../shared/locNormalization.mjs';
@@ -336,7 +336,7 @@ async function buildYearCache(entry) {
   const itemId = extractLocItemId(selectedItem.id);
   const itemUrl = `${BASE_URL}/item/${itemId}/?fo=json`;
   const itemData = await fetchJson(itemUrl);
-  const audioUrl = getAudioUrlFromResources(itemData);
+  const audioUrl = extractPlaybackFromResources(itemData).primaryUrl;
 
   if (!audioUrl) {
     return [String(entry.year), null];
