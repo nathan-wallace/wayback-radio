@@ -14,6 +14,7 @@
       "uid": "123456789",
       "normalizedUid": "123456789",
       "routeId": "special-1980",
+      "payloadPath": "items/1980/special-1980.json",
       "title": "Special Match Title",
       "date": "1980",
       "contributor": "Library of Congress",
@@ -36,6 +37,7 @@
 - `items[].uid`: original UID when available.
 - `items[].normalizedUid`: stable UID string used to rebuild `itemUids`.
 - `items[].routeId`: stable route segment used for URL `itemId` lookups and deferred playback.
+- `items[].payloadPath`: relative dataset path for the item's materialized payload. This must be year-aware when the same `routeId` can appear in multiple years.
 - `items[].title`, `items[].date`, `items[].contributor`: minimal display metadata needed before full item hydration.
 - `items[].hasPlayableAudio`: whether the item participates in playback selection.
 - `items[].selectionKeys`: pre-normalized identity keys, in deterministic priority order, used to resolve `requestedIdentity`.

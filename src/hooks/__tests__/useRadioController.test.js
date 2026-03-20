@@ -165,7 +165,7 @@ describe('useRadioController', () => {
     });
 
     await waitFor(() => {
-      expect(fetchRecordingById).toHaveBeenCalledWith('loc-1940-first');
+      expect(fetchRecordingById).toHaveBeenCalledWith('loc-1940-first', { year: 1940 });
     });
     expect(result.current.playback).toMatchObject({
       primaryUrl: 'https://cdn.example/one.mp3',
@@ -246,7 +246,7 @@ describe('useRadioController', () => {
       result.current.setIsOn(true);
     });
 
-    await waitFor(() => expect(fetchRecordingById).toHaveBeenCalledWith('loc-1940-first'));
+    await waitFor(() => expect(fetchRecordingById).toHaveBeenCalledWith('loc-1940-first', { year: 1940 }));
 
     expect(result.current.selectionState).toBe('selected');
     expect(result.current.playbackResolutionState).toBe('resolutionError');
@@ -319,7 +319,7 @@ describe('useRadioController', () => {
 
     await waitFor(() => expect(result.current.initComplete).toBe(true));
 
-    expect(fetchRecordingById).toHaveBeenCalledWith('111');
+    expect(fetchRecordingById).toHaveBeenCalledWith('111', { year: 1940 });
     expect(window.history.replaceState).toHaveBeenLastCalledWith({}, '', '/?year=1940&itemId=loc-1940-first');
   });
 

@@ -16,6 +16,17 @@ function buildSelectionKeys(routeId, uid, title) {
   return buildNormalizedSelectionKeys(routeId, uid, title);
 }
 
+function buildItemPayloadPath(year, routeId) {
+  const normalizedYear = normalizeText(year);
+  const normalizedRouteId = normalizeText(routeId);
+
+  if (!normalizedYear || !normalizedRouteId) {
+    return null;
+  }
+
+  return `items/${normalizedYear}/${normalizedRouteId}.json`;
+}
+
 async function writeJson(relativePath, payload) {
   const targetPath = path.join(PUBLIC_DATA_DIR, relativePath);
   await mkdir(path.dirname(targetPath), { recursive: true });
@@ -56,6 +67,7 @@ function buildYearManifest(year, audioRecord, generatedAt, source) {
   const routeId = normalizeText(audioRecord?.itemId) || normalizeText(audioRecord?.metadata?.uid) || String(year);
   const uid = normalizeText(audioRecord?.metadata?.uid) || extractUid(routeId) || routeId;
   const title = normalizeText(audioRecord?.metadata?.title) || normalizeText(audioRecord?.title) || routeId;
+  const payloadPath = buildItemPayloadPath(year, routeId);
 
   return {
     year: Number.parseInt(year, 10),
@@ -66,6 +78,7 @@ function buildYearManifest(year, audioRecord, generatedAt, source) {
         uid,
         normalizedUid: uid,
         routeId,
+        payloadPath,
         title,
         date: normalizeText(audioRecord?.metadata?.date) || String(year),
         contributor: normalizeText(audioRecord?.metadata?.contributor),
@@ -100,6 +113,7 @@ async function main() {
   const audioByYear = archiveCache?.audioByYear || {};
   await Promise.all(Object.entries(audioByYear).flatMap(([year, audioRecord]) => {
     const routeId = normalizeText(audioRecord?.itemId) || normalizeText(audioRecord?.metadata?.uid) || String(year);
+    const itemPayloadPath = buildItemPayloadPath(year, routeId);
     const normalizedAudioRecord = {
       ...audioRecord,
       metadata: normalizeMetadata(audioRecord?.metadata),
@@ -109,8 +123,8 @@ async function main() {
       writeJson(`catalog/years/${year}.json`, buildYearManifest(year, normalizedAudioRecord, generatedAt, source)),
     ];
 
-    if (routeId) {
-      writes.push(writeJson(`items/${routeId}.json`, normalizedAudioRecord));
+    if (itemPayloadPath) {
+      writes.push(writeJson(itemPayloadPath, normalizedAudioRecord));
     }
 
     return writes;

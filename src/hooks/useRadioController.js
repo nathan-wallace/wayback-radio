@@ -375,7 +375,9 @@ export function useRadioController() {
     const nextRouteState = updates.routeState || { source: null, uid: null, audioUrl: null };
     const fetcher = isDirectAudioUrl(audioId)
       ? () => resolvePlaybackForDirectUrl(audioId)
-      : () => fetchRecordingById(audioId);
+      : Number.isFinite(Number.parseInt(targetYear, 10))
+        ? () => fetchRecordingById(audioId, { year: targetYear })
+        : () => fetchRecordingById(audioId);
 
     return withLatestSelection('loadingItem', fetcher, async (result) => {
       setSelectionRouteState(nextRouteState);

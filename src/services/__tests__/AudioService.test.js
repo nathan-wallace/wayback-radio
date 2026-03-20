@@ -97,7 +97,7 @@ describe('fetchAudioByYear', () => {
 
     const result = await fetchAudioByYear(1980);
 
-    expect(result.error).toBeNull();
+    expect(result.error ?? null).toBeNull();
     expect(result.playback).toMatchObject({
       primaryUrl: 'https://cdn.example/match-1980.mp3',
       mimeType: 'audio/mpeg',
@@ -118,7 +118,7 @@ describe('fetchAudioByYear', () => {
 
     const result = await fetchAudioByYear(1980, 'Special%20Match%20Title');
 
-    expect(result.error).toBeNull();
+    expect(result.error ?? null).toBeNull();
     expect(result.metadata.title).toBe('Special Match Title');
     expect(result.itemId).toBe('special-1980');
     expect(global.fetch.mock.calls.at(-1)[0]).toContain('/item/special-1980/');
@@ -135,7 +135,7 @@ describe('fetchAudioByYear', () => {
 
     const result = await fetchAudioByYear(1980, 'Missing%20Identity');
 
-    expect(result.error).toBeNull();
+    expect(result.error ?? null).toBeNull();
     expect(result.metadata.title).toBe('First playable');
     expect(global.fetch.mock.calls.at(-1)[0]).toContain('/item/first-1980/');
   });
@@ -329,6 +329,7 @@ describe('fetchAudioByYear', () => {
               uid: '1980-a',
               normalizedUid: '1980-a',
               routeId: 'static-1980-a',
+              payloadPath: 'items/1980/static-1980-a.json',
               title: 'Static Dataset Choice',
               date: '1980',
               contributor: 'Static Source',
@@ -340,7 +341,7 @@ describe('fetchAudioByYear', () => {
         });
       }
 
-      if (String(url).endsWith('/data/items/static-1980-a.json')) {
+      if (String(url).endsWith('/data/items/1980/static-1980-a.json')) {
         return createJsonResponse({
           playback: createPlayback('https://cdn.example/static-1980-a.mp3'),
           metadata: {
@@ -363,6 +364,7 @@ describe('fetchAudioByYear', () => {
     expect(result.source).toBe('static-dataset-item');
     expect(result.metadata.title).toBe('Static Dataset Choice');
     expect(result.itemRouteIds).toEqual(['static-1980-a']);
+    expect(global.fetch.mock.calls.some(([url]) => String(url).endsWith('/data/items/1980/static-1980-a.json'))).toBe(true);
     expect(global.fetch).toHaveBeenCalledTimes(2);
     expect(global.fetch.mock.calls.every(([url]) => String(url).includes('/data/'))).toBe(true);
   });
@@ -756,6 +758,37 @@ describe('fetchRecordingById', () => {
     expect(result.itemId).toBe('route-only-1980');
     expect(result.metadata.title).toBe('Route Based Item');
     expect(global.fetch.mock.calls.at(-1)[0]).toBe('https://www.loc.gov/item/route-only-1980/?fo=json');
+  });
+
+  it('can resolve a year-scoped static dataset item without falling back to the shared item key', async () => {
+    global.fetch.mockImplementation(async (url) => {
+      if (String(url).endsWith('/data/items/1980/shared-route.json')) {
+        return createJsonResponse({
+          playback: createPlayback('https://cdn.example/shared-route-1980.mp3'),
+          metadata: {
+            title: 'Shared Route in 1980',
+            date: '1980',
+            uid: 'shared-route',
+          },
+          itemId: 'shared-route',
+          source: 'static-dataset-item'
+        });
+      }
+
+      if (String(url).endsWith('/data/items/shared-route.json')) {
+        return notFoundResponse();
+      }
+
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    const result = await fetchRecordingById('shared-route', { year: 1980 });
+
+    expect(result.error ?? null).toBeNull();
+    expect(result.metadata.title).toBe('Shared Route in 1980');
+    expect(result.playback.primaryUrl).toBe('https://cdn.example/shared-route-1980.mp3');
+    expect(global.fetch.mock.calls.some(([url]) => String(url).endsWith('/data/items/1980/shared-route.json'))).toBe(true);
+    expect(global.fetch.mock.calls.some(([url]) => String(url).endsWith('/data/items/shared-route.json'))).toBe(false);
   });
 
   it('re-resolves stale playback for cached item metadata without discarding the metadata', async () => {
