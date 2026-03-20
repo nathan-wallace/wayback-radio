@@ -2,10 +2,10 @@
   "name": "wayback-radio",
   "version": "1.0.0",
   "scripts": {
-    "predev": "node scripts/materialize-static-dataset.mjs",
+    "predev": "node scripts/materialize-static-dataset.mjs && node scripts/validate-static-dataset.mjs --dir public/data",
     "dev": "vite",
-    "prebuild": "node scripts/materialize-static-dataset.mjs",
-    "build": "vite build",
+    "prebuild": "node scripts/materialize-static-dataset.mjs && node scripts/validate-static-dataset.mjs --dir public/data",
+    "build": "vite build && node scripts/validate-static-dataset.mjs --dir public/data --dir docs/data",
     "preview": "vite preview",
     "test": "jest",
     "generate:archive-cache": "node scripts/generate-archive-cache.mjs",
@@ -13,7 +13,8 @@
     "materialize:static-dataset": "node scripts/materialize-static-dataset.mjs",
     "test:functional": "playwright test",
     "test:functional:ui": "playwright test --ui",
-    "test:functional:install": "playwright install --with-deps chromium"
+    "test:functional:install": "playwright install --with-deps chromium",
+    "validate:static-dataset": "node scripts/validate-static-dataset.mjs --dir public/data --dir docs/data"
   },
   "dependencies": {
     "axios": "^1.4.0",

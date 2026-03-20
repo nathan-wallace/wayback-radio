@@ -7,6 +7,7 @@ import {
   normalizeMetadata,
   normalizeText,
 } from '../shared/locNormalization.mjs';
+import { assertNoDatasetValidationErrors, validateArchiveCacheDataset } from '../shared/datasetValidation.mjs';
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ARCHIVE_CACHE_PATH = path.join(ROOT_DIR, 'src', 'data', 'archive-cache.json');
@@ -92,6 +93,7 @@ function buildYearManifest(year, audioRecord, generatedAt, source) {
 
 async function main() {
   const archiveCache = JSON.parse(await readFile(ARCHIVE_CACHE_PATH, 'utf8'));
+  assertNoDatasetValidationErrors(validateArchiveCacheDataset(archiveCache));
   const catalogEntries = buildCatalogEntries(archiveCache);
   const generatedAt = archiveCache?.generatedAt || new Date().toISOString();
   const source = archiveCache?.catalog?.source || archiveCache?.source || 'bootstrap-manifest';
