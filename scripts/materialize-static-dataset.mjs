@@ -11,7 +11,26 @@ import { assertNoDatasetValidationErrors, validateArchiveCacheDataset } from '..
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ARCHIVE_CACHE_PATH = path.join(ROOT_DIR, 'src', 'data', 'archive-cache.json');
-const PUBLIC_DATA_DIR = path.join(ROOT_DIR, 'public', 'data');
+const DEFAULT_OUTPUT_DIRS = ['public/data'];
+
+function parseArgs(argv = []) {
+  const directories = [];
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+
+    if (arg === '--dir') {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error('Missing value for --dir');
+      }
+      directories.push(value);
+      index += 1;
+    }
+  }
+
+  return directories.length > 0 ? directories : DEFAULT_OUTPUT_DIRS;
+}
 
 function buildSelectionKeys(routeId, uid, title) {
   return buildNormalizedSelectionKeys(routeId, uid, title);
@@ -28,8 +47,8 @@ function buildItemPayloadPath(year, routeId) {
   return `items/${normalizedYear}/${normalizedRouteId}.json`;
 }
 
-async function writeJson(relativePath, payload) {
-  const targetPath = path.join(PUBLIC_DATA_DIR, relativePath);
+async function writeJson(outputDir, relativePath, payload) {
+  const targetPath = path.join(ROOT_DIR, outputDir, relativePath);
   await mkdir(path.dirname(targetPath), { recursive: true });
   await writeFile(targetPath, `${JSON.stringify(payload, null, 2)}\n`);
 }
@@ -92,47 +111,51 @@ function buildYearManifest(year, audioRecord, generatedAt, source) {
 }
 
 async function main() {
+  const outputDirectories = parseArgs(process.argv.slice(2));
   const archiveCache = JSON.parse(await readFile(ARCHIVE_CACHE_PATH, 'utf8'));
   assertNoDatasetValidationErrors(validateArchiveCacheDataset(archiveCache));
   const catalogEntries = buildCatalogEntries(archiveCache);
   const generatedAt = archiveCache?.generatedAt || new Date().toISOString();
   const source = archiveCache?.catalog?.source || archiveCache?.source || 'bootstrap-manifest';
 
-  await rm(PUBLIC_DATA_DIR, { recursive: true, force: true });
-  await mkdir(PUBLIC_DATA_DIR, { recursive: true });
+  await Promise.all(outputDirectories.map(async (outputDir) => {
+    const outputPath = path.join(ROOT_DIR, outputDir);
+    await rm(outputPath, { recursive: true, force: true });
+    await mkdir(outputPath, { recursive: true });
 
-  const catalogPayload = {
-    generatedAt: archiveCache?.catalog?.generatedAt || generatedAt,
-    source,
-    pageCount: archiveCache?.catalog?.pageCount ?? 0,
-    entries: catalogEntries,
-  };
-
-  await writeJson('manifest.json', buildManifestPayload(archiveCache, catalogEntries));
-  await writeJson('catalog.json', catalogPayload);
-  await writeJson('catalog/index.json', catalogPayload);
-
-  const audioByYear = archiveCache?.audioByYear || {};
-  await Promise.all(Object.entries(audioByYear).flatMap(([year, audioRecord]) => {
-    const routeId = normalizeText(audioRecord?.itemId) || normalizeText(audioRecord?.metadata?.uid) || String(year);
-    const itemPayloadPath = buildItemPayloadPath(year, routeId);
-    const normalizedAudioRecord = {
-      ...audioRecord,
-      metadata: normalizeMetadata(audioRecord?.metadata),
+    const catalogPayload = {
+      generatedAt: archiveCache?.catalog?.generatedAt || generatedAt,
+      source,
+      pageCount: archiveCache?.catalog?.pageCount ?? 0,
+      entries: catalogEntries,
     };
-    const writes = [
-      writeJson(`audio/${year}.json`, normalizedAudioRecord),
-      writeJson(`catalog/years/${year}.json`, buildYearManifest(year, normalizedAudioRecord, generatedAt, source)),
-    ];
 
-    if (itemPayloadPath) {
-      writes.push(writeJson(itemPayloadPath, normalizedAudioRecord));
-    }
+    await writeJson(outputDir, 'manifest.json', buildManifestPayload(archiveCache, catalogEntries));
+    await writeJson(outputDir, 'catalog.json', catalogPayload);
+    await writeJson(outputDir, 'catalog/index.json', catalogPayload);
 
-    return writes;
+    const audioByYear = archiveCache?.audioByYear || {};
+    await Promise.all(Object.entries(audioByYear).flatMap(([year, audioRecord]) => {
+      const routeId = normalizeText(audioRecord?.itemId) || normalizeText(audioRecord?.metadata?.uid) || String(year);
+      const itemPayloadPath = buildItemPayloadPath(year, routeId);
+      const normalizedAudioRecord = {
+        ...audioRecord,
+        metadata: normalizeMetadata(audioRecord?.metadata),
+      };
+      const writes = [
+        writeJson(outputDir, `audio/${year}.json`, normalizedAudioRecord),
+        writeJson(outputDir, `catalog/years/${year}.json`, buildYearManifest(year, normalizedAudioRecord, generatedAt, source)),
+      ];
+
+      if (itemPayloadPath) {
+        writes.push(writeJson(outputDir, itemPayloadPath, normalizedAudioRecord));
+      }
+
+      return writes;
+    }));
   }));
 
-  console.log(`Materialized static dataset into ${PUBLIC_DATA_DIR}`);
+  console.log(`Materialized static dataset into ${outputDirectories.join(', ')}`);
 }
 
 main().catch((error) => {
