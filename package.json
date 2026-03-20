@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "jest",
     "generate:archive-cache": "node scripts/generate-archive-cache.mjs",
-    "generate:static-dataset": "npm run generate:archive-cache",
+    "generate:static-dataset": "node scripts/generate-static-dataset.mjs",
     "materialize:static-dataset": "node scripts/materialize-static-dataset.mjs --dir public/data",
     "materialize:docs-dataset": "node scripts/materialize-static-dataset.mjs --dir docs/data",
     "test:functional": "playwright test",

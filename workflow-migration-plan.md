@@ -10,11 +10,11 @@ This migration needs to cover both GitHub Actions workflows that currently depen
 ## Sequence
 
 1. **Add static dataset entry points in `package.json`.**
-   - Introduce `generate:static-dataset` as the generation entry point.
+   - Introduce `generate:static-dataset` as the generation entry point that validates and reuses the checked-in `src/data/archive-cache.json` snapshot for CI/static builds instead of crawling LOC live.
    - Introduce `materialize:static-dataset` as the materialization entry point that writes `public/data/**` before `vite build` runs.
    - Keep `generate:archive-cache` in place as a compatibility shim until both workflows have moved.
 2. **Move the Pages deployment workflow first.**
-   - Update `.github/workflows/pages-build-deployment.yml` to call `generate:static-dataset` and `materialize:static-dataset` before `npm run build`.
+   - Update `.github/workflows/pages-build-deployment.yml` to call `generate:static-dataset` and `materialize:static-dataset` before `npm run build`. The generation step should stay offline-friendly by validating the committed cache snapshot rather than fetching LOC in CI.
    - Keep the upload path pointed at `docs/`, because `vite.config.js` still sets `build.outDir = 'docs'`.
    - Verify the built artifact contains `docs/data/**`, relying on Vite's default behavior of copying `public/**` into the configured output directory.
 3. **Migrate the cache refresh workflow next.**
