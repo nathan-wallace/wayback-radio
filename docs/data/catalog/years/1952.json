@@ -6,13 +6,14 @@
     {
       "uid": "200197221",
       "normalizedUid": "200197221",
-      "routeId": "ihas.200197221",
-      "payloadPath": "items/1952/ihas.200197221.json",
+      "routeId": "ihas.200197221-1952",
+      "payloadPath": "items/1952/ihas.200197221-1952.json",
       "title": "The night herding song",
       "date": "1952",
       "contributor": "Stephens, Harry, Lomax, John A. (John Avery)",
       "hasPlayableAudio": true,
       "selectionKeys": [
+        "200197221 1952",
         "200197221",
         "the night herding song"
       ],
