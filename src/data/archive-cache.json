@@ -1,167 +1,394 @@
 {
-  "generatedAt": "2026-03-19T00:00:00.000Z",
-  "source": "bootstrap-manifest",
+  "generatedAt": "2026-03-23T07:13:21.360Z",
+  "manifestVersion": "7a85863dd8b97278",
+  "source": "loc-search-pagination",
   "sourceMetadata": {
     "generator": "scripts/generate-archive-cache.mjs",
-    "strategy": "fallback-seed-limited",
     "searchUrl": "https://www.loc.gov/search/?q=sound+recording&fa=original-format%3Asound+recording%7Cdigitized&fo=json&c=100&sp=1",
     "itemUrlTemplate": "https://www.loc.gov/item/{itemId}/?fo=json",
-    "notes": "Limited fallback seed used when the Library of Congress API path is blocked during generation; full LOC ingestion requires a more reliable source because this seed is too small to replace the catalog."
+    "pageSize": 100,
+    "pageCount": 10,
+    "bootstrapAudioYears": [
+      1942,
+      1952,
+      1978
+    ],
+    "strategy": "partial-catalog-small-audio-seed",
+    "haltedEarly": true,
+    "haltReason": "Request failed (429) for https://www.loc.gov/search/?q=sound+recording&fa=original-format%3Asound+recording%7Cdigitized&fo=json&c=100&sp=11"
   },
   "catalog": {
-    "generatedAt": "2026-03-19T00:00:00.000Z",
-    "source": "bootstrap-fallback-seed",
-    "pageCount": 0,
+    "generatedAt": "2026-03-23T07:13:21.360Z",
+    "source": "loc-search-pagination",
+    "pageCount": 10,
     "entries": [
       {
-        "year": 1903,
+        "year": 1890,
+        "itemCount": 7,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1891,
+        "itemCount": 1,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1898,
+        "itemCount": 4,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1916,
+        "itemCount": 1,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1921,
+        "itemCount": 1,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1924,
+        "itemCount": 1,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1931,
         "itemCount": 1,
         "sampleItemIds": [
-          "100010968"
+          "200196308"
         ],
         "status": "ready"
       },
       {
-        "year": 1917,
+        "year": 1934,
+        "itemCount": 6,
+        "sampleItemIds": [
+          "200212371",
+          "200212370",
+          "200212374"
+        ],
+        "status": "ready"
+      },
+      {
+        "year": 1938,
+        "itemCount": 1,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1939,
+        "itemCount": 6,
+        "sampleItemIds": [
+          "200049056",
+          "200049054",
+          "200049055"
+        ],
+        "status": "ready"
+      },
+      {
+        "year": 1940,
+        "itemCount": 2,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1941,
         "itemCount": 1,
         "sampleItemIds": [
-          "100010382"
+          "200049057"
         ],
         "status": "ready"
       },
       {
         "year": 1942,
-        "itemCount": 1,
+        "itemCount": 2,
         "sampleItemIds": [
-          "200197221"
+          "200049058",
+          "200049059"
         ],
+        "status": "ready"
+      },
+      {
+        "year": 1945,
+        "itemCount": 4,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1946,
+        "itemCount": 3,
+        "sampleItemIds": [
+          "200049060"
+        ],
+        "status": "ready"
+      },
+      {
+        "year": 1947,
+        "itemCount": 3,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1948,
+        "itemCount": 2,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1949,
+        "itemCount": 1,
+        "sampleItemIds": [],
         "status": "ready"
       },
       {
         "year": 1952,
         "itemCount": 1,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1959,
+        "itemCount": 3,
         "sampleItemIds": [
-          "200197221"
+          "200049061"
         ],
         "status": "ready"
       },
       {
-        "year": 1970,
+        "year": 1960,
+        "itemCount": 2,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1961,
+        "itemCount": 3,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1976,
         "itemCount": 1,
-        "sampleItemIds": [
-          "200196384"
-        ],
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1977,
+        "itemCount": 29,
+        "sampleItemIds": [],
         "status": "ready"
       },
       {
         "year": 1978,
+        "itemCount": 3,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1979,
+        "itemCount": 16,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1982,
+        "itemCount": 25,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1983,
+        "itemCount": 101,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1984,
+        "itemCount": 32,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1985,
+        "itemCount": 8,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1987,
+        "itemCount": 25,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1988,
+        "itemCount": 37,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1989,
+        "itemCount": 47,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1990,
+        "itemCount": 31,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1991,
+        "itemCount": 15,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1992,
+        "itemCount": 16,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1993,
+        "itemCount": 20,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1994,
+        "itemCount": 24,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1995,
+        "itemCount": 22,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1996,
+        "itemCount": 20,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1997,
+        "itemCount": 22,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1998,
+        "itemCount": 26,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 1999,
+        "itemCount": 39,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 2000,
+        "itemCount": 60,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 2001,
+        "itemCount": 34,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 2002,
+        "itemCount": 19,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 2003,
         "itemCount": 1,
-        "sampleItemIds": [
-          "200196565"
-        ],
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 2013,
+        "itemCount": 1,
+        "sampleItemIds": [],
+        "status": "ready"
+      },
+      {
+        "year": 2021,
+        "itemCount": 1,
+        "sampleItemIds": [],
         "status": "ready"
       }
     ]
   },
   "availableYears": [
-    1903,
-    1917,
+    1890,
+    1891,
+    1898,
+    1916,
+    1921,
+    1924,
+    1931,
+    1934,
+    1938,
+    1939,
+    1940,
+    1941,
     1942,
+    1945,
+    1946,
+    1947,
+    1948,
+    1949,
     1952,
-    1970,
-    1978
+    1959,
+    1960,
+    1961,
+    1976,
+    1977,
+    1978,
+    1979,
+    1982,
+    1983,
+    1984,
+    1985,
+    1987,
+    1988,
+    1989,
+    1990,
+    1991,
+    1992,
+    1993,
+    1994,
+    1995,
+    1996,
+    1997,
+    1998,
+    1999,
+    2000,
+    2001,
+    2002,
+    2003,
+    2013,
+    2021
   ],
   "audioByYear": {
-    "1903": {
-      "audioUrl": "https://www.loc.gov/resource/ihas.100010968.0",
-      "metadata": {
-        "title": "I hear America singing",
-        "date": "1903",
-        "url": "https://www.loc.gov/item/ihas.100010968/",
-        "uid": "100010968",
-        "contributor": "Whitman, Walt, 1819-1892, Billy Collins, b. 1941",
-        "summary": "Billy Collins reads Walt Whitman's poem at the Library of Congress.",
-        "genre": "Literary readings",
-        "recordingInfo": "1903 · Literary readings",
-        "image": null,
-        "notes": [
-          "Recorded at the Library of Congress."
-        ],
-        "repository": "music division",
-        "aka": [],
-        "relatedResources": [],
-        "formats": [],
-        "location": "",
-        "mimeType": "audio",
-        "source": [
-          {
-            "label": "https://www.loc.gov/item/ihas.100010968/",
-            "url": "https://www.loc.gov/item/ihas.100010968/"
-          }
-        ],
-        "technicalDetails": [
-          {
-            "label": "UID",
-            "value": "100010968"
-          },
-          {
-            "label": "Mime Type",
-            "value": "audio"
-          }
-        ]
-      },
-      "title": "ihas.100010968",
-      "itemId": "ihas.100010968",
-      "error": null,
-      "itemUids": [
-        "100010968"
-      ]
-    },
-    "1917": {
-      "audioUrl": "https://www.loc.gov/resource/ihas.100010382.0",
-      "metadata": {
-        "title": "America: My country 'tis of thee",
-        "date": "1917",
-        "url": "https://www.loc.gov/item/ihas.100010382/",
-        "uid": "100010382",
-        "contributor": "",
-        "summary": "Bootstrap seed for an Edison-era Library of Congress audio item.",
-        "genre": "Audio Recording",
-        "recordingInfo": "1917 · Audio Recording",
-        "image": null,
-        "notes": [
-          "Representative early recording seed."
-        ],
-        "repository": "",
-        "aka": [],
-        "relatedResources": [],
-        "formats": [],
-        "location": "",
-        "mimeType": "audio",
-        "source": [
-          {
-            "label": "https://www.loc.gov/item/ihas.100010382/",
-            "url": "https://www.loc.gov/item/ihas.100010382/"
-          }
-        ],
-        "technicalDetails": [
-          {
-            "label": "UID",
-            "value": "100010382"
-          },
-          {
-            "label": "Mime Type",
-            "value": "audio"
-          }
-        ]
-      },
-      "title": "ihas.100010382",
-      "itemId": "ihas.100010382",
-      "error": null,
-      "itemUids": [
-        "100010382"
-      ]
-    },
     "1942": {
       "audioUrl": "https://www.loc.gov/resource/ihas.200197221.0",
       "metadata": {
@@ -251,52 +478,6 @@
       "error": null,
       "itemUids": [
         "200197221"
-      ]
-    },
-    "1970": {
-      "audioUrl": "https://www.loc.gov/resource/ihas.200196384.0",
-      "metadata": {
-        "title": "Jesus Leads Me All the Way",
-        "date": "1970",
-        "url": "https://www.loc.gov/item/ihas.200196384/",
-        "uid": "200196384",
-        "contributor": "Yurchenco, Henrietta, Goodwin",
-        "summary": "Gullah spiritual recorded on John's Island, South Carolina.",
-        "genre": "sound recording",
-        "recordingInfo": "1970 · sound recording",
-        "image": null,
-        "notes": [
-          "Date: March 29, 1970.",
-          "Venue: Recorded in John's Island, South Carolina."
-        ],
-        "repository": "american folklife center",
-        "aka": [],
-        "relatedResources": [],
-        "formats": [],
-        "location": "South Carolina, United States",
-        "mimeType": "audio",
-        "source": [
-          {
-            "label": "https://www.loc.gov/item/ihas.200196384/",
-            "url": "https://www.loc.gov/item/ihas.200196384/"
-          }
-        ],
-        "technicalDetails": [
-          {
-            "label": "UID",
-            "value": "200196384"
-          },
-          {
-            "label": "Mime Type",
-            "value": "audio"
-          }
-        ]
-      },
-      "title": "ihas.200196384",
-      "itemId": "ihas.200196384",
-      "error": null,
-      "itemUids": [
-        "200196384"
       ]
     },
     "1978": {
