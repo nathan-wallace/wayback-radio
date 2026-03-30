@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-03-23T07:13:21.360Z",
-  "manifestVersion": "7a85863dd8b97278",
+  "generatedAt": "2026-03-30T07:30:39.824Z",
+  "manifestVersion": "4dd397da9574ecfd",
   "source": "loc-search-pagination",
   "sourceMetadata": {
     "generator": "scripts/generate-archive-cache.mjs",
@@ -18,7 +18,7 @@
     "haltReason": "Request failed (429) for https://www.loc.gov/search/?q=sound+recording&fa=original-format%3Asound+recording%7Cdigitized&fo=json&c=100&sp=11"
   },
   "catalog": {
-    "generatedAt": "2026-03-23T07:13:21.360Z",
+    "generatedAt": "2026-03-30T07:30:39.824Z",
     "source": "loc-search-pagination",
     "pageCount": 10,
     "entries": [
@@ -36,7 +36,7 @@
       },
       {
         "year": 1898,
-        "itemCount": 4,
+        "itemCount": 5,
         "sampleItemIds": [],
         "status": "ready"
       },
@@ -84,7 +84,7 @@
       },
       {
         "year": 1939,
-        "itemCount": 6,
+        "itemCount": 8,
         "sampleItemIds": [
           "200049056",
           "200049054",
@@ -94,7 +94,7 @@
       },
       {
         "year": 1940,
-        "itemCount": 2,
+        "itemCount": 3,
         "sampleItemIds": [],
         "status": "ready"
       },
@@ -211,7 +211,7 @@
       },
       {
         "year": 1984,
-        "itemCount": 32,
+        "itemCount": 23,
         "sampleItemIds": [],
         "status": "ready"
       },
@@ -223,7 +223,7 @@
       },
       {
         "year": 1987,
-        "itemCount": 25,
+        "itemCount": 27,
         "sampleItemIds": [],
         "status": "ready"
       },
