@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-03-30T07:30:39.824Z",
-  "manifestVersion": "4dd397da9574ecfd",
+  "generatedAt": "2026-04-06T07:46:10.165Z",
+  "manifestVersion": "49cfff0ac914a9f5",
   "source": "loc-search-pagination",
   "sourceMetadata": {
     "generator": "scripts/generate-archive-cache.mjs",
@@ -18,7 +18,7 @@
     "haltReason": "Request failed (429) for https://www.loc.gov/search/?q=sound+recording&fa=original-format%3Asound+recording%7Cdigitized&fo=json&c=100&sp=11"
   },
   "catalog": {
-    "generatedAt": "2026-03-30T07:30:39.824Z",
+    "generatedAt": "2026-04-06T07:46:10.165Z",
     "source": "loc-search-pagination",
     "pageCount": 10,
     "entries": [
@@ -205,7 +205,7 @@
       },
       {
         "year": 1983,
-        "itemCount": 101,
+        "itemCount": 100,
         "sampleItemIds": [],
         "status": "ready"
       },
