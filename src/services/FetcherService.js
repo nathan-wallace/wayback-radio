@@ -1,12 +1,10 @@
-// FetcherService — priority cache, adaptive retry, circuit breaker, request cancelation
-
-const fetchers = {};
+// FetcherService — resilient fetch with retry, backoff, circuit breaker, priority cache
 
 function safeJson(resp) {
   const ct = resp.headers.get('content-type') || '';
   if (ct.includes('application/json') || ct.includes('text/plain')) {
     return resp.text().then((text) => {
-      try { return JSON.parse(text); } catch { return text; }
+      try { return JSON.parse(text); } catch { return null; }
     });
   }
   return resp.json();
@@ -26,9 +24,7 @@ function fetchWithAbort(url, signal) {
 }
 
 class AbortControllerWithFallback {
-  constructor() {
-    this.current = new AbortController();
-  }
+  constructor() { this.current = new AbortController(); }
   abort() { try { this.current.abort(); } catch {} }
   get signal() { return this.current.signal; }
 }
@@ -53,25 +49,12 @@ const fetcherDefaults = {
 };
 
 /**
- * Build a fetcher with retry, adaptive backoff, circuit breaker,
- * priority cache, and cache busting.
- *
- * @param {string} url
- * @param {Object} [opts]
- * @param {number} [opts.maxRetries=2]
- * @param {number} [opts.initialDelayMs=300]
- * @param {number} [opts.maxDelayMs=5000]
- * @param {number} [opts.jitterFactor=0.3]
- * @param {boolean} [opts.cacheBust=false] URL timestamp-based cache busting
- * @param {string} [opts.cacheKey=null] explicit cache key for priority cache
- * @param {number} [opts.cacheTTL=86400000] ms
- * @param {string} [opts.priority='default'] low | default | high-priority
- * @param {boolean} [opts.abortStale=true]
- * @returns {() => Promise<any>} fetcher function
+ * Build a resilient fetcher. Returns a deduplicated promise with
+ * adaptive retry, circuit breaker, priority cache, and abort support.
  */
 export function createFetcher(url, opts = {}) {
   const c = { ...fetcherDefaults, ...opts };
-  const { initialDelayMs, maxDelayMs, jitterFactor, maxRetries, cacheBust, cacheTTL, abortStale } = c;
+  const { initialDelayMs, maxDelayMs, jitterFactor, maxRetries, cacheBust } = c;
 
   let pendingResolve = null;
   let pendingReject = null;
@@ -97,7 +80,7 @@ export function createFetcher(url, opts = {}) {
     return null;
   }
 
-  function cacheResult(value) {
+  function storeResult(value) {
     if (!c.cacheKey) return;
     const store = (fetchers['$$priorityByPriority$$'] ||= { low: new Map(), default: new Map(), high: new Map() });
     const key = c.priority === 'low' ? `${url}` : `prefetch:${c.cacheKey}`;
@@ -112,8 +95,7 @@ export function createFetcher(url, opts = {}) {
 
   function fetchFn() {
     if (isAborted) return new Promise(() => {});
-    if (abortStale && pendingResolve) return pendingPromise;
-
+    if (c.abortStale && pendingResolve) return pendingPromise;
     if (aborter.current.signal.aborted) aborter = new AbortControllerWithFallback();
 
     if (circuitBreakerOpen && Date.now() < circuitBreakerUntil) {
@@ -131,7 +113,7 @@ export function createFetcher(url, opts = {}) {
     }
 
     return fetchWithAbort(requestUrl, aborter.signal).then((data) => {
-      cacheResult(data);
+      storeResult(data);
       consecutiveFailures = 0;
       circuitBreakerOpen = false;
       return data;
@@ -140,7 +122,6 @@ export function createFetcher(url, opts = {}) {
       if (err.status === 404) return Promise.reject(err);
       if (err.status >= 400 && err.status < 500 && err.status !== 429) return Promise.reject(err);
       circuitBreakerOpen = false;
-      if (circuitBreakerUntil > 0) circuitBreakerOpen = true;
       circuitBreakerUntil = Date.now() + getCircuitBreakerUntil();
       return backoff(consecutiveFailures, initialDelayMs).then(() => fetchFn());
     });
@@ -163,8 +144,9 @@ export function createFetcher(url, opts = {}) {
   return pendingPromise;
 }
 
-export async function prefetch(url, opts = {}) {
-  const { initialDelayMs } = opts;
-  await new Promise((r) => setTimeout(r, initialDelayMs || 100));
-  return createFetcher(url, { ...opts, priority: 'low' });
+const fetchers = Object.create(null);
+
+/** Fire-and-forget low-priority prefetch of a URL. */
+export function prefetch(url, opts = {}) {
+  return createFetcher(url, { ...opts, priority: 'low', initialDelayMs: 50 });
 }

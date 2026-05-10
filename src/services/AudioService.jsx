@@ -26,6 +26,7 @@ import {
   saveItemRecord,
   saveYearSelection,
 } from './offlineStore';
+import { createFetcher, prefetch } from './FetcherService.js';
 
 const BASE_URL = 'https://www.loc.gov';
 const YEAR_SELECTION_CACHE_TTL = 14 * 24 * 60 * 60 * 1000;
